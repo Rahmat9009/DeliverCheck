@@ -40,6 +40,21 @@ The investigation used only read-only command discovery, the locally cached Shar
 - The MCP HTTP entry does not verify tokens or infer authenticated identity from headers. Authentication remains a host responsibility, so DeliverCheck does not expose an authenticated-caller claim in local mode.
 - Sources: [official MCP TypeScript SDK v2 documentation](https://ts.sdk.modelcontextprotocol.io/v2/) and [official server guide](https://github.com/modelcontextprotocol/typescript-sdk/blob/main/docs/server.md).
 
+## Confirmed Vercel deployment facts
+
+- Vercel currently supports Node.js 24, and `package.json` may select it with a compatible engine range.
+- Vercel Functions accept Web-standard `Request` objects and return `Response` objects. Files under `api/` become functions without a framework.
+- Function duration can be set in `vercel.json`. DeliverCheck configures a 300-second maximum with Fluid compute and cancellation forwarding, matching its five-minute application deadline.
+- Vercel officially documents hosting MCP over Streamable HTTP. Independently, the pinned official MCP SDK documents that `createMcpHandler` runs its factory once per HTTP request, retains no instance state, and scales horizontally.
+- DeliverCheck's two tools need no sessions, resumability, subscriptions, server push, or filesystem state. The existing Streamable HTTP transport is therefore compatible with stateless Vercel Functions for this scope.
+- Sources: [Vercel Node.js versions](https://vercel.com/docs/functions/runtimes/node-js/node-js-versions), [Functions API](https://vercel.com/docs/functions/functions-api-reference), [duration configuration](https://vercel.com/docs/functions/configuring-functions/duration), [Vercel MCP guide](https://vercel.com/docs/mcp/deploy-mcp-servers-to-vercel), and [official MCP HTTP serving guide](https://github.com/modelcontextprotocol/typescript-sdk/blob/main/docs/serving/http.md).
+
+## Confirmed Cloud audit boundary
+
+- SharedOS makes durable host state and provider behavior host responsibilities. Its threat model treats HTTP headers, request bodies, external services, deployment configuration, and secrets as trust-boundary concerns.
+- No official public SharedOS Cloud audit-ingestion URL or wire contract was found in the current official documentation or the pinned package. The Vercel adapter therefore keeps export optional, requires both a key and an operator-supplied HTTPS endpoint, exports only sanitized audit outcomes, and fails safely.
+- Sources: [SharedOS architecture](https://www.sharedos.ai/docs/architecture) and [SharedOS threat model](https://github.com/Aicoo-Team/SharedOS/blob/main/docs/security/threat-model.md).
+
 ## Non-official interoperability evidence
 
 No other participant's repository was inspected or used for the implementation. In particular, no Witness source was copied. Therefore this checkpoint contains no participant-derived interoperability claim. Any future observation learned from a participant repository or deployed agent must be recorded under this heading as non-official evidence and must not override official SharedOS contracts or organizer guidance.
@@ -54,10 +69,11 @@ No other participant's repository was inspected or used for the implementation. 
 - The referenced “sixth submission-validity condition” was not defined in the inspected platform documentation.
 - The SharedNet API documentation URL was identified but could not be inspected from this environment.
 - The public SharedOS documents describe a general host integration. They do not establish whether the hackathon will inspect embedded audit events, require a hosted SharedOS boundary, or supply a separate competition adapter.
+- No official SharedOS Cloud audit-ingestion endpoint or request schema was identified. `SHAREDOS_KEY` and the deployment export seam must remain disabled until the organizer or SharedOS documentation supplies that contract.
 
 ## Deferred integration decisions
 
-DeliverCheck does not yet choose a SharedOS tenant, seller registration path, authentication contract, credit-transfer flow, or deployment target. The local identities, service prices, and proof namespace are application-owned development values; they are not claims about Arena provisioning or settlement.
+DeliverCheck now has a local-only Vercel-compatible adapter, but no Vercel project or public deployment exists. It does not yet choose a SharedOS tenant, seller registration path, authentication contract, credit-transfer flow, or confirmed Cloud audit endpoint. The local identities, service prices, and proof namespace are application-owned development values; they are not claims about Arena provisioning or settlement.
 
 ## Recommended next action
 

@@ -1,0 +1,20 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "fluid": true,
+  "functions": {
+    "api/**/*.ts": {
+      "maxDuration": 300,
+      "supportsCancellation": true
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/health",
+      "destination": "/api/health"
+    },
+    {
+      "source": "/.well-known/agent.json",
+      "destination": "/api/agent-card"
+    }
+  ]
+}

@@ -2,7 +2,7 @@
 
 DeliverCheck makes one agent's output usable by the next. Its local service diagnoses JSON compatibility for free or runs a 7-credit repair proposal through independent verification before publishing a result.
 
-The core pipeline runs locally through an embedded SharedOS authorization boundary and is exposed through REST and the official MCP Streamable HTTP transport. Billing enforcement, caller authentication, Arena registration, deployment, CSV, persistence, and LLM integration remain outside this checkpoint.
+The core pipeline runs locally through an embedded SharedOS authorization boundary and is exposed through REST and the official MCP Streamable HTTP transport. A stateless Vercel adapter is prepared but has not been deployed. Billing enforcement, caller authentication, Arena registration, CSV, persistence, and LLM integration remain outside this checkpoint.
 
 ## Requirements
 
@@ -18,6 +18,7 @@ npm test
 npm run sharedos:proof
 npm run demo:core
 npm run smoke:service
+npm run test:deploy
 ```
 
 Build and start the Node deployment adapter locally:
@@ -39,6 +40,8 @@ curl --fail -X POST http://127.0.0.1:3000/api/v1/diagnose \
 ```
 
 Use `/api/v1/repair` with the same frozen request shape to invoke the complete repair and verification flow. The response declares 7 Arena credits, but the local adapter does not collect or verify payment. See `docs/service-layer.md` for repair and MCP examples, deployment settings, limits, and error behavior.
+
+Vercel-compatible stateless Web handlers are prepared under `api/`, with routing and a 300-second function limit in `vercel.json`. They have not been deployed. See `docs/vercel-deployment.md` for the architecture, MCP compatibility result, local deployment tests, environment variables, and the optional disabled-by-default SharedOS Cloud audit seam.
 
 ## Contract versions
 

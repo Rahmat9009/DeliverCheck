@@ -79,4 +79,4 @@ await client.close();
 - Requests have a five-minute deadline. A timeout, dependency failure, authorization denial, or verifier rejection remains an error response and never becomes `passed_checks` or `cannot_repair`.
 - A successful diagnosis or repair proves only the stated format and schema checks. Every public diagnosis has `proves_factual_truth: false`, and every verification check in a repair result preserves the same limitation.
 
-The Node adapter in `src/service/node-server.ts` is suitable for a supported Node 24 runtime. No deployment manifest or hosted resource is created in this checkpoint because a deployment provider has not been selected.
+The Node adapter in `src/service/node-server.ts` remains suitable for an always-on Node 24 runtime. Stateless Vercel wrappers and their local verification are documented in `docs/vercel-deployment.md`; no hosted resource has been created.

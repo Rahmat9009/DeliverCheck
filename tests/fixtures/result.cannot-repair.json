@@ -1,0 +1,23 @@
+{
+  "job_id": "job-invalid-json-1",
+  "status": "cannot_repair",
+  "changes": [],
+  "checks": [
+    {
+      "name": "source_json_parse",
+      "status": "failed",
+      "evidence": "The source text ended before the JSON object was closed.",
+      "proves_factual_truth": false
+    }
+  ],
+  "unresolved": [
+    {
+      "code": "invalid_source_json",
+      "message": "The source is not parseable JSON and no explicit rule justifies reconstructing the missing content."
+    }
+  ],
+  "original_hash": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+  "schema_hash": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+  "elapsed_ms": 1,
+  "implementation_version": "0.1.0"
+}

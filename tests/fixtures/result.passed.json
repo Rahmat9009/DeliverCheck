@@ -1,0 +1,39 @@
+{
+  "job_id": "job-000123",
+  "status": "passed_checks",
+  "candidate": {
+    "invoice_id": "000123",
+    "currency": "QAR",
+    "amount": "17.50"
+  },
+  "changes": [
+    {
+      "path": "/invoice_id",
+      "operation": "replace",
+      "before": 123,
+      "after": "000123",
+      "justification": "Explicit rule 0 defines a six-character identifier and requires preserving leading zeros.",
+      "rule_indexes": [0]
+    }
+  ],
+  "checks": [
+    {
+      "name": "target_schema",
+      "status": "passed",
+      "evidence": "Candidate validates against the supplied target schema without coercion, defaults, or property removal.",
+      "proves_factual_truth": false
+    },
+    {
+      "name": "identifier_preservation",
+      "status": "passed",
+      "evidence": "invoice_id is represented as the six-character string 000123.",
+      "proves_factual_truth": false
+    }
+  ],
+  "unresolved": [],
+  "original_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "candidate_hash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "schema_hash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "elapsed_ms": 4,
+  "implementation_version": "0.1.0"
+}

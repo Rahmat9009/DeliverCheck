@@ -1,0 +1,22 @@
+{
+  "name": "delivercheck",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Evidence-first JSON contract validation for the DeliverCheck hackathon project.",
+  "type": "module",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "ajv": "^8.17.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.9.0",
+    "vitest": "^5.0.0"
+  }
+}

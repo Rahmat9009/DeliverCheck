@@ -1,0 +1,24 @@
+{
+  "job_id": "job-date-1",
+  "status": "needs_information",
+  "changes": [],
+  "checks": [
+    {
+      "name": "date_ambiguity",
+      "status": "failed",
+      "evidence": "The source contains 03/04/2026 and no rule defines day/month order.",
+      "proves_factual_truth": false
+    }
+  ],
+  "unresolved": [
+    {
+      "code": "ambiguous_date",
+      "message": "Specify whether 03/04/2026 means 3 April or March 4.",
+      "path": "/delivery_date"
+    }
+  ],
+  "original_hash": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "schema_hash": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+  "elapsed_ms": 2,
+  "implementation_version": "0.1.0"
+}

@@ -1,0 +1,270 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://delivercheck.dev/contracts/result/1.0.0",
+  "title": "DeliverCheck result v1",
+  "description": "An evidence-bearing result. Structural checks do not prove factual truth.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "job_id",
+    "status",
+    "changes",
+    "checks",
+    "unresolved",
+    "original_hash",
+    "schema_hash",
+    "elapsed_ms",
+    "implementation_version"
+  ],
+  "properties": {
+    "job_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "status": {
+      "enum": ["passed_checks", "needs_information", "cannot_repair"]
+    },
+    "candidate": true,
+    "changes": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/change"
+      }
+    },
+    "checks": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/check"
+      }
+    },
+    "unresolved": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/unresolved"
+      }
+    },
+    "original_hash": {
+      "$ref": "#/$defs/hash"
+    },
+    "candidate_hash": {
+      "$ref": "#/$defs/hash"
+    },
+    "schema_hash": {
+      "$ref": "#/$defs/hash"
+    },
+    "elapsed_ms": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "implementation_version": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$"
+    }
+  },
+  "$defs": {
+    "hash": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "change": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "operation", "justification", "rule_indexes"],
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "RFC 6901 JSON Pointer; the empty string addresses the document root."
+        },
+        "operation": {
+          "enum": ["add", "replace", "remove"]
+        },
+        "before": true,
+        "after": true,
+        "justification": {
+          "type": "string",
+          "minLength": 1
+        },
+        "rule_indexes": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    },
+    "check": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "status", "evidence", "proves_factual_truth"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "enum": ["passed", "failed", "skipped"]
+        },
+        "evidence": {
+          "type": "string",
+          "minLength": 1
+        },
+        "proves_factual_truth": {
+          "const": false
+        }
+      }
+    },
+    "unresolved": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message"],
+      "properties": {
+        "code": {
+          "enum": [
+            "ambiguous_date",
+            "ambiguous_number",
+            "ambiguous_currency",
+            "contradictory_requirements",
+            "missing_fact",
+            "invalid_source_json",
+            "invalid_target_schema",
+            "schema_violation",
+            "unsupported_input_format"
+          ]
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1
+        },
+        "path": {
+          "type": "string"
+        },
+        "rule_indexes": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "passed_checks"
+          }
+        },
+        "required": ["status"]
+      },
+      "then": {
+        "required": ["candidate", "candidate_hash"],
+        "properties": {
+          "candidate": true,
+          "candidate_hash": {
+            "$ref": "#/$defs/hash"
+          },
+          "checks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "status": {
+                  "const": "passed"
+                }
+              }
+            }
+          },
+          "unresolved": {
+            "type": "array",
+            "maxItems": 0
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "enum": ["needs_information", "cannot_repair"]
+          }
+        },
+        "required": ["status"]
+      },
+      "then": {
+        "properties": {
+          "unresolved": {
+            "type": "array",
+            "minItems": 1
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "cannot_repair"
+          }
+        },
+        "required": ["status"]
+      },
+      "then": {
+        "not": {
+          "anyOf": [
+            {
+              "properties": { "candidate": true },
+              "required": ["candidate"]
+            },
+            {
+              "properties": {
+                "candidate_hash": { "$ref": "#/$defs/hash" }
+              },
+              "required": ["candidate_hash"]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "unresolved": {
+            "type": "array",
+            "contains": {
+              "type": "object",
+              "properties": {
+                "code": {
+                  "enum": [
+                    "ambiguous_date",
+                    "ambiguous_number",
+                    "ambiguous_currency",
+                    "contradictory_requirements",
+                    "missing_fact"
+                  ]
+                }
+              },
+              "required": ["code"]
+            }
+          }
+        },
+        "required": ["unresolved"]
+      },
+      "then": {
+        "properties": {
+          "status": {
+            "const": "needs_information"
+          }
+        },
+        "required": ["status"]
+      }
+    }
+  ]
+}

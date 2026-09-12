@@ -8,13 +8,19 @@
     "node": ">=24 <25"
   },
   "scripts": {
+    "build": "tsc",
     "demo:core": "node --import tsx scripts/demo-core.ts",
     "sharedos:proof": "node --import tsx scripts/sharedos-proof.ts",
+    "smoke:service": "node --import tsx scripts/smoke-service.ts",
+    "start": "node dist/src/service/start.js",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
   "dependencies": {
     "@aicoo/sharedos": "0.1.0-alpha.4",
+    "@modelcontextprotocol/client": "2.0.0",
+    "@modelcontextprotocol/node": "2.0.0",
+    "@modelcontextprotocol/server": "2.0.0",
     "ajv": "^8.17.1"
   },
   "devDependencies": {

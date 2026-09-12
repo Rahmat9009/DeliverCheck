@@ -24,7 +24,7 @@ describe("coordinator boundary", () => {
 
   it("maps a public tool call into the unchanged internal request", () => {
     const mapped = toFrozenRequest({
-      service: "bridge",
+      service: "repair",
       request: validRequest as DeliverCheckRequest,
     });
 

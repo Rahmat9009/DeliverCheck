@@ -1,8 +1,8 @@
 # DeliverCheck
 
-DeliverCheck makes one agent's output usable by the next. Its local core repairs rejected JSON only when explicit requirements justify a transformation, independently verifies the proposal, and returns evidence about every change and check.
+DeliverCheck makes one agent's output usable by the next. Its local service diagnoses JSON compatibility for free or runs a 7-credit repair proposal through independent verification before publishing a result.
 
-The core pipeline runs locally through an embedded SharedOS authorization boundary. It does not provide HTTP, MCP, CSV, deployment, payment, persistence, or LLM integration.
+The core pipeline runs locally through an embedded SharedOS authorization boundary and is exposed through REST and the official MCP Streamable HTTP transport. Billing enforcement, caller authentication, Arena registration, deployment, CSV, persistence, and LLM integration remain outside this checkpoint.
 
 ## Requirements
 
@@ -17,7 +17,28 @@ npm run typecheck
 npm test
 npm run sharedos:proof
 npm run demo:core
+npm run smoke:service
 ```
+
+Build and start the Node deployment adapter locally:
+
+```sh
+npm run build
+npm start
+```
+
+The default origin is `http://127.0.0.1:3000`. These calls exercise discovery and the free diagnosis service:
+
+```sh
+curl --fail http://127.0.0.1:3000/health
+curl --fail http://127.0.0.1:3000/.well-known/agent.json
+curl --fail http://127.0.0.1:3000/api/v1/listing
+curl --fail -X POST http://127.0.0.1:3000/api/v1/diagnose \
+  -H 'Content-Type: application/json' \
+  --data '{"request_id":"example-1","input_format":"json","source_text":"{\"status\":\"done\"}","target_schema":{"type":"object","required":["status"],"properties":{"status":{"enum":["complete","pending"]}}},"explicit_rules":["status must satisfy the target schema"]}'
+```
+
+Use `/api/v1/repair` with the same frozen request shape to invoke the complete repair and verification flow. The response declares 7 Arena credits, but the local adapter does not collect or verify payment. See `docs/service-layer.md` for repair and MCP examples, deployment settings, limits, and error behavior.
 
 ## Contract versions
 

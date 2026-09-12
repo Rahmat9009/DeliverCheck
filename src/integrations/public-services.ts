@@ -1,22 +1,26 @@
 import type { DeliverCheckRequest } from "../types.js";
 
 export const PUBLIC_SERVICE_CURRENCY = "Arena credits";
+export const BILLING_ENFORCEMENT =
+  "external_pending_official_sharednet_confirmation" as const;
+export const MAXIMUM_RESPONSE_TIME_MS = 5 * 60 * 1_000;
 
 export const PUBLIC_SERVICES = [
   {
     name: "diagnose",
-    price: 0,
-    description: "Explain structural blockers without claiming a repair occurred.",
+    price_credits: 0,
+    description:
+      "Validate one JSON delivery against its target schema and report exact incompatibilities without changing the payload.",
+    limitations:
+      "Bounded top-level JSON objects only; structural checks do not prove factual truth.",
   },
   {
     name: "repair",
-    price: 7,
-    description: "Request an explicitly justified JSON repair after the repair port is merged.",
-  },
-  {
-    name: "bridge",
-    price: 12,
-    description: "Request repair plus independent verification after both ports are merged.",
+    price_credits: 7,
+    description:
+      "Run the SharedOS-authorized repair and independent verification pipeline.",
+    limitations:
+      "Only explicit, deterministic rules can justify changes; ambiguous or missing facts require more information.",
   },
 ] as const;
 

@@ -32,6 +32,14 @@ The investigation used only read-only command discovery, the locally cached Shar
 - `invokeResource` authorizes before resolving or calling the resource provider. The embedded DeliverCheck proof confirmed that three denied operations never reached its provider; only the allowed intake operation did.
 - Sources: [SharedOS README](https://github.com/Aicoo-Team/SharedOS), [host integration guide](https://github.com/Aicoo-Team/SharedOS/blob/main/docs/host-integration.md), and [threat model](https://github.com/Aicoo-Team/SharedOS/blob/main/docs/security/threat-model.md).
 
+## Confirmed MCP SDK facts
+
+- DeliverCheck pins the official split MCP TypeScript SDK packages `@modelcontextprotocol/server`, `@modelcontextprotocol/node`, and `@modelcontextprotocol/client` at exactly `2.0.0`.
+- The official v2 server API registers tools through `McpServer.registerTool`. Tools can return `structuredContent`, and plain JSON Schema can be adapted through `fromJsonSchema`.
+- The official server guide recommends Streamable HTTP for remote servers. DeliverCheck uses `createMcpHandler` with the official Node adapter at `/api/mcp`; the smoke test uses the official Streamable HTTP client.
+- The MCP HTTP entry does not verify tokens or infer authenticated identity from headers. Authentication remains a host responsibility, so DeliverCheck does not expose an authenticated-caller claim in local mode.
+- Sources: [official MCP TypeScript SDK v2 documentation](https://ts.sdk.modelcontextprotocol.io/v2/) and [official server guide](https://github.com/modelcontextprotocol/typescript-sdk/blob/main/docs/server.md).
+
 ## Non-official interoperability evidence
 
 No other participant's repository was inspected or used for the implementation. In particular, no Witness source was copied. Therefore this checkpoint contains no participant-derived interoperability claim. Any future observation learned from a participant repository or deployed agent must be recorded under this heading as non-official evidence and must not override official SharedOS contracts or organizer guidance.
@@ -53,4 +61,4 @@ DeliverCheck does not yet choose a SharedOS tenant, seller registration path, au
 
 ## Recommended next action
 
-Obtain one organizer-confirmed, minimal end-to-end Arena integration example covering tenant/owner provisioning, seller registration, endpoint authentication, paid-call settlement and verification, the event schedule, and all submission-validity conditions. Record that answer before implementing network endpoints, authentication, or payment handling.
+Obtain one organizer-confirmed, minimal end-to-end Arena integration example covering tenant/owner provisioning, seller registration, endpoint authentication, paid-call settlement and verification, the event schedule, and all submission-validity conditions. Record that answer before implementing Arena authentication, billing enforcement, seller registration, or deployment.

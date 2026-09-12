@@ -4,7 +4,7 @@ Investigation date: 2026-09-12
 
 ## Scope and safety
 
-This checkpoint used only read-only command discovery, the locally cached SharedNet package README, and public documentation from the official SharedOS repository. It did not inspect stored credentials, send room messages, make purchases, deploy software, register an agent, or register a service.
+The investigation used only read-only command discovery, the locally cached SharedNet package README, public documentation from the official SharedOS repository, and the source and declarations shipped in the pinned official package. It did not inspect stored credentials, send room messages, make purchases, deploy software, register an agent, or register a service.
 
 ## Confirmed SharedNet facts
 
@@ -17,6 +17,7 @@ This checkpoint used only read-only command discovery, the locally cached Shared
 
 ## Confirmed SharedOS facts
 
+- DeliverCheck pins the official `@aicoo/sharedos` SDK at exactly `0.1.0-alpha.4`. That SDK requires Node.js 20.11 or newer and re-exports the contracts, core, HTTP, OS, runtime, and client packages at the same prerelease version.
 - SharedOS is a TypeScript permission and one-turn execution kernel, not a service-registration or billing platform. Its public README says product UI, accounts, billing, durable host state, model providers, credentials, and scheduling remain host responsibilities.
 - Public packages are `0.x` prereleases installed from npm's `next` tag. The public API is explicitly described as unstable and not production-hardened.
 - The recommended product integration is an embedded runtime. A remote alternative uses `@aicoo/sharedos-http` with `@aicoo/sharedos-client`.
@@ -25,7 +26,15 @@ This checkpoint used only read-only command discovery, the locally cached Shared
 - Transport authentication identifies a remote caller but does not replace SharedOS capability authorization. The host owns authentication and must derive identity and grants from trusted server-side state rather than caller-supplied JSON.
 - A target agent invocation requires a separate recipient-scoped execution grant. A message alone grants no authority.
 - SharedOS audit records are designed to omit message secrets, credentials, raw authorization tokens, and sensitive provider payloads.
+- `AccessContext` uses structured addresses and contains identity, namespace, owner, purpose, trace, namespace-selection, and time data; it deliberately carries no grants. `SharedOSKernel` requires a trusted `GrantSource` and fails closed if authority cannot be resolved as one valid set.
+- A capability grant binds its subject, issuer, namespace, resource owner/path, allowed actions, exact-or-descendant scope, and constraints such as permitted purposes. The DeliverCheck proof uses only `exact` scopes.
+- An authority snapshot hash is SHA-256 over a canonical, order-independent representation of the resolved grant set. `authority.resolved` and `authorization.checked` audit events carry that hash.
+- `invokeResource` authorizes before resolving or calling the resource provider. The embedded DeliverCheck proof confirmed that three denied operations never reached its provider; only the allowed intake operation did.
 - Sources: [SharedOS README](https://github.com/Aicoo-Team/SharedOS), [host integration guide](https://github.com/Aicoo-Team/SharedOS/blob/main/docs/host-integration.md), and [threat model](https://github.com/Aicoo-Team/SharedOS/blob/main/docs/security/threat-model.md).
+
+## Non-official interoperability evidence
+
+No other participant's repository was inspected or used for the implementation. In particular, no Witness source was copied. Therefore this checkpoint contains no participant-derived interoperability claim. Any future observation learned from a participant repository or deployed agent must be recorded under this heading as non-official evidence and must not override official SharedOS contracts or organizer guidance.
 
 ## Blockers and unknowns
 
@@ -40,8 +49,8 @@ This checkpoint used only read-only command discovery, the locally cached Shared
 
 ## Deferred integration decisions
 
-DeliverCheck does not yet choose a SharedOS tenant, seller identity, service-registration path, authentication contract, pricing model, credit-transfer flow, or deployment target. Those decisions remain outside checkpoint 1 until organizers publish an official integration example or answer the open questions.
+DeliverCheck does not yet choose a SharedOS tenant, seller registration path, authentication contract, credit-transfer flow, or deployment target. The local identities, service prices, and proof namespace are application-owned development values; they are not claims about Arena provisioning or settlement.
 
 ## Recommended next action
 
-Obtain one organizer-confirmed, minimal end-to-end Arena integration example covering tenant/owner provisioning, seller registration, endpoint authentication, paid-call settlement and verification, the event schedule, and all submission-validity conditions. Record that answer before designing checkpoint 2 so the implementation does not encode unsupported platform assumptions.
+Obtain one organizer-confirmed, minimal end-to-end Arena integration example covering tenant/owner provisioning, seller registration, endpoint authentication, paid-call settlement and verification, the event schedule, and all submission-validity conditions. Record that answer before implementing network endpoints, authentication, or payment handling.

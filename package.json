@@ -8,6 +8,7 @@
     "node": ">=24 <25"
   },
   "scripts": {
+    "arena:simulate": "node --import tsx scripts/arena-simulation.ts",
     "build": "tsc",
     "demo:core": "node --import tsx scripts/demo-core.ts",
     "sharedos:proof": "node --import tsx scripts/sharedos-proof.ts",

@@ -1,6 +1,6 @@
 # DeliverCheck Arena runner specification
 
-Status: design only; implementation is blocked on the unconfirmed protocol items in [arena-protocol.md](arena-protocol.md).
+Status: the guarded operator, durable state, adapters, and deterministic simulation are implemented on `codex/arena-operator`. Live operation remains blocked on the unconfirmed protocol items in [arena-protocol.md](arena-protocol.md).
 
 ## Objective
 
@@ -37,7 +37,7 @@ The runner separates capabilities into small adapters:
 
 No query parameter, Room message, customer payload, HTTP header, or claimed identity can enable a capability, raise a budget, change a deadline, alter the configured payee, select a different DeliverCheck origin, or switch simulation into live mode. Live mutation adapters require an explicit startup mode selected outside message data.
 
-Simulation builds must not contain a code path that invokes `say`, `pay`, a mutating Room/Decision command, or an authenticated SharedNet POST. Tests inject mutation adapters that always throw and assert zero calls. Simulation can replay sanitized fixtures and write only its local simulation ledger.
+Simulation builds must not contain a code path to the live adapter's `say`, `pay`, mutating Room/Decision commands, or authenticated SharedNet POST operations. The simulation adapter records synthetic sends and payments in memory so the workflows can be tested, while its real-side-effect counter remains zero. Simulation can replay sanitized fixtures and write only its local simulation ledger.
 
 ## Persistent monitoring and reconnection
 
@@ -157,12 +157,12 @@ Before Round 2, the runner takes a read-only balance snapshot and builds a compl
 
 ```text
 minimum settled spend: 80 credits
-maximum authorized spend: 80 credits
+maximum authorized spend: 100 credits
 minimum distinct products: 3
 per-product maximum: organizer profile or explicit operator ceiling
 ```
 
-This deliberately requires an exact 80-credit combination. If the confirmed catalogue cannot satisfy it, the runner stops before paying and requires the operator to authorize a revised maximum while preserving the competition minimum. Room messages cannot revise a budget. The runner also refuses a plan above the official balance or past the Round 2 purchase cutoff.
+The planner chooses the lowest deterministic useful combination inside the 80–100 credit window. If the confirmed catalogue cannot satisfy it, the runner stops before paying. Room messages cannot revise a budget. The runner also refuses a plan above the official balance or past the Round 2 purchase cutoff.
 
 For every purchase, it appends and syncs a unique intent before running `pay`. Its memo includes the organizer-approved unique purchase ID. If the CLI result is lost or the runner crashes, restart first queries `ledger` for that exact recipient, amount, memo, and Room binding. It never repeats an uncertain payment until reconciliation proves no transfer occurred. Because transfers are final, an ambiguous outcome stops further spending.
 
@@ -203,4 +203,4 @@ Simulation output must be labeled `SIMULATION` and cannot be accepted as an Aren
 
 ## Remaining design blockers
 
-Implementation should begin only after the organizer supplies the missing Arena profile fields listed in [arena-protocol.md](arena-protocol.md). The transport monitor, local state machine, and simulation harness can then be implemented without guessing, followed by a read-only live shadow run before message sending or credit spending is enabled.
+The simulation control layer is implemented without an Arena-specific product or ranking assumption. The organizer must still supply the missing Arena profile fields listed in [arena-protocol.md](arena-protocol.md). After those fields are available, the confirmed discovery and ranking adapters can be wired into the existing interfaces and exercised in a read-only live shadow run before message sending or credit spending is enabled.

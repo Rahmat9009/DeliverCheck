@@ -1,8 +1,8 @@
 # DeliverCheck
 
-DeliverCheck is an agent-callable service for rejected JSON. Its intended workflow is to repair only transformations justified by explicit requirements, independently verify the candidate, and return evidence about every change and check.
+DeliverCheck makes one agent's output usable by the next. Its local core repairs rejected JSON only when explicit requirements justify a transformation, independently verifies the proposal, and returns evidence about every change and check.
 
-This checkpoint defines and validates the versioned JSON contracts. It deliberately does not contain a repair agent, verifier agent, CSV support, HTTP service, frontend, SharedOS integration, or deployment configuration.
+The core pipeline runs locally through an embedded SharedOS authorization boundary. It does not provide HTTP, MCP, CSV, deployment, payment, persistence, or LLM integration.
 
 ## Requirements
 
@@ -15,6 +15,8 @@ This checkpoint defines and validates the versioned JSON contracts. It deliberat
 npm install
 npm run typecheck
 npm test
+npm run sharedos:proof
+npm run demo:core
 ```
 
 ## Contract versions
@@ -45,7 +47,7 @@ Breaking changes require a new major contract URI. Additive optional fields requ
 - `needs_information` requires at least one unresolved issue. A partial candidate may be present, but callers must not treat it as approved.
 - `cannot_repair` requires at least one unresolved issue and cannot contain a candidate or candidate hash.
 
-Hashes use `sha256:<64 lowercase hexadecimal characters>`. `original_hash` is computed from the exact UTF-8 bytes of `source_text`. `schema_hash` and `candidate_hash` are computed from RFC 8785 canonical JSON bytes so object-key order cannot change an identity. Hash generation belongs to a later checkpoint; version 1 fixes these semantics now so implementations remain interoperable.
+Hashes use `sha256:<64 lowercase hexadecimal characters>`. `original_hash` is computed from the exact UTF-8 bytes of `source_text`. `schema_hash` and `candidate_hash` are computed from RFC 8785 canonical JSON bytes so object-key order cannot change an identity.
 
 `changes` are RFC 6901 JSON-Pointer-addressed edits with explicit-rule references. `checks` contain human-readable evidence and must set `proves_factual_truth` to `false`. Passing structural, schema, or format checks establishes only that those checks passed.
 
@@ -58,4 +60,4 @@ Hashes use `sha256:<64 lowercase hexadecimal characters>`. `original_hash` is co
 - Ajv validation disables coercion, defaults, and silent property removal.
 - Format and schema checks are never represented as proof of factual truth.
 
-`src/verify/validate.ts` currently validates request/result envelopes and validates a candidate against a supplied schema. It does not decide whether a repair is justified; that belongs to a later checkpoint.
+See `docs/core-pipeline.md` for the repair-proposal, independent-verification, and SharedOS authorization flow.

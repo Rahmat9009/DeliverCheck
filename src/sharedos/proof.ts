@@ -17,8 +17,9 @@ import {
   DELIVERCHECK_PURPOSE,
   formatSharedOSAddress,
 } from "./identities.js";
+import { DELIVERCHECK_RESOURCE_NAMESPACE } from "./resources.js";
 
-export const DELIVERCHECK_RESOURCE_NAMESPACE = "delivercheck.jobs";
+export { DELIVERCHECK_RESOURCE_NAMESPACE } from "./resources.js";
 
 const PROOF_NAMESPACE = "delivercheck-proof";
 const PROOF_TIME = "2026-09-12T00:00:00.000Z";

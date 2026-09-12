@@ -1,27 +1,35 @@
 import type {
-  ChangeEvidence,
+  CannotRepairResult,
   DeliverCheckRequest,
-  JsonValue,
-  UnresolvedIssue,
+  DeliverCheckResult,
+  NeedsInformationResult,
+  PassedChecksResult,
   VerificationCheck,
 } from "../types.js";
+import type { DetailedCheck } from "../verify/verifier.js";
 
 export interface RepairInvocation {
   job_id: string;
   request: DeliverCheckRequest;
+  now: () => number;
 }
 
+/**
+ * A repair stage can propose success or one of the two contract terminal
+ * outcomes. None of these outcomes is authoritative until verification.
+ */
 export type RepairStageResult =
   | {
-      status: "candidate_ready";
-      candidate: JsonValue;
-      changes: ChangeEvidence[];
-      unresolved: [];
+      status: "candidate_proposed";
+      proposal: PassedChecksResult;
     }
   | {
-      status: "needs_information" | "cannot_repair";
-      changes: ChangeEvidence[];
-      unresolved: [UnresolvedIssue, ...UnresolvedIssue[]];
+      status: "needs_information";
+      proposal: NeedsInformationResult;
+    }
+  | {
+      status: "cannot_repair";
+      proposal: CannotRepairResult;
     };
 
 export interface RepairAgentPort {
@@ -31,20 +39,26 @@ export interface RepairAgentPort {
 export interface VerificationInvocation {
   job_id: string;
   request: DeliverCheckRequest;
-  candidate: JsonValue;
-  changes: ChangeEvidence[];
+  proposal: DeliverCheckResult;
 }
 
 export type VerificationStageResult =
   | {
-      status: "passed_checks";
+      status: "accepted";
+      proposal_status: DeliverCheckResult["status"];
       checks: VerificationCheck[];
-      unresolved: [];
+      detailed_checks: DetailedCheck[];
+      verified_hashes: {
+        original: string;
+        schema: string;
+        candidate?: string;
+      };
     }
   | {
-      status: "needs_information" | "cannot_repair";
+      status: "rejected";
+      reason: string;
       checks: VerificationCheck[];
-      unresolved: [UnresolvedIssue, ...UnresolvedIssue[]];
+      detailed_checks: DetailedCheck[];
     };
 
 export interface VerificationAgentPort {
@@ -65,7 +79,7 @@ export class CoordinatorNotReadyError extends Error {
   }
 }
 
-/** Fails closed until separately implemented repair and verifier adapters exist. */
+/** Fails closed until both independently implemented stage adapters exist. */
 export function requireCoordinatorPorts(
   ports: Partial<CoordinatorPorts>,
 ): CoordinatorPorts {

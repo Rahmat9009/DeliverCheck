@@ -77,6 +77,10 @@ export function setAt(root: JsonValue, pointer: string, value: JsonValue): void 
   if (segments.length === 0) {
     throw new Error("Cannot replace the document root in place.");
   }
+  const unsafeSegment = segments.find((segment) => UNSAFE_KEYS.has(segment));
+  if (unsafeSegment !== undefined) {
+    throw new Error(`Cannot set "${pointer}": unsafe JSON pointer segment.`);
+  }
   const parentPointer = toPointer(segments.slice(0, -1));
   const parent = getAt(root, parentPointer);
   const key = segments[segments.length - 1] as string;

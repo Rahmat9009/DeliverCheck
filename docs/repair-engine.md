@@ -73,13 +73,17 @@ transformation.
 | Enum normalization | `Normalize "status" value "done" to "complete".` | enum_normalize |
 | Whitespace trim | `Trim whitespace from "code".` / `... from all fields.` | trim_whitespace |
 | Leading-zero identifier | `invoice_id is a six-character identifier and meaningful leading zeros must be preserved.` (must both say "leading zero(s)" and name a known schema field) | identifier_preserve |
-| Constant requirement | `currency must be QAR.` | constant_requirement |
+| Constant requirement | `currency must be QAR.` or `status must be "complete".` | constant_requirement |
 | Date order | `Dates in "delivery_date" use the format DD/MM/YYYY.` (or `Dates use the format ...` for all fields) | date_format |
 | Decimal/thousands comma | `"," is the decimal separator for "amount".` / `... the thousands separator for ...` | number_separator |
 | Currency symbol pin | `"$" means "USD" for "currency".` | currency_symbol |
 
 Two `constant_requirement` directives for the same field with different
 values are reported as `contradictory_requirements` and neither is applied.
+Unquoted constants must be compact uppercase tokens of 2–16 ASCII letters,
+digits, underscores, or hyphens, such as `QAR`, `USD`, or `OK`. Other literal
+values must be quoted. Descriptive prose such as `code must be uppercase
+letters` is inert and cannot create a false contradiction.
 
 ## Supported transformations
 
@@ -102,7 +106,7 @@ produces a value that validates against the field's subschema:
   it for that field or for all fields.
 - **Reformat a slash-date** (`D/M/YYYY`) to ISO `YYYY-MM-DD`, only when a
   `date_format` rule states the day/month order for that field (or all
-  fields).
+  fields) and the result is a real calendar date, including leap-year rules.
 - **Resolve a comma-grouped number** to plain digits or a decimal point,
   only when a rule states what the comma means for that field.
 - **Map a currency symbol** to an ISO code, only when a rule pins that exact
@@ -124,10 +128,10 @@ produces a value that validates against the field's subschema:
   never truncated to fit.
 - **Rejects unsafe keys**: `__proto__`, `constructor`, `prototype` — in the
   source, or as a rule's rename/move target — abort the run.
-- **Bounded work**: at most `MAX_CHANGE_OPERATIONS` (25) changes and the
-  first `MAX_EXPLICIT_RULES` (200) rules are processed per run; exceeding
-  the change budget reports `cannot_repair` / `schema_violation` rather than
-  applying an unbounded number of edits.
+- **Bounded work**: at most `MAX_CHANGE_OPERATIONS` (25) changes and
+  `MAX_EXPLICIT_RULES` (200) rules are accepted per run. More than 200 rules
+  rejects the entire request before any rule is processed. Exceeding the
+  change budget reports `cannot_repair` / `schema_violation`.
 - **Deterministic**: no randomness, no wall-clock-dependent logic other than
   `elapsed_ms` itself (which callers should not compare across runs). The
   same request, including with the same injected clock, always yields the
@@ -152,18 +156,13 @@ them.
   objects are not repaired field-by-field; if the final whole-document
   validation still fails for such a schema, the result is `cannot_repair`
   rather than a guess.
-- **No `$ref`/`$defs` resolution across properties.** Each field is validated
-  by wrapping its own subschema in a minimal object schema; a subschema that
-  `$ref`s into the parent document's `$defs` cannot be resolved in
-  isolation and will surface as `invalid_target_schema` for that field.
+- **Bounded local references only.** Field validation retains root `$defs`
+  and `definitions`, so acyclic references into either can participate in a
+  repair. Remote, root-self, dynamic, recursive, unresolved, and cyclic
+  references are rejected.
 - **Rename/move are top-level-first.** Rename only ever touches a top-level
   key. Move accepts arbitrary JSON pointers but will not create missing
   intermediate objects.
-- **A `"<field> must be <phrase>."` sentence always parses as a constant
-  requirement**, even if the phrase reads like description rather than a
-  literal value (e.g. "code must be three uppercase letters."). This is
-  harmless: the resulting value is only applied if it also passes schema
-  validation, and it always cites its source rule either way.
 - **Ambiguity detection is heuristic, not a full locale-aware parser.** Date
   ambiguity is limited to `D/M/YYYY`-shaped strings; number ambiguity to a
   single bare comma group; currency ambiguity to short non-alphanumeric (or

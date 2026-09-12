@@ -59,6 +59,26 @@ export function resolveSlashDateToIso(value: string, order: DateOrder): string |
   if (month < 1 || month > 12 || day < 1 || day > 31) {
     return null;
   }
+  const numericYear = Number(year);
+  const leapYear = numericYear % 4 === 0 &&
+    (numericYear % 100 !== 0 || numericYear % 400 === 0);
+  const daysInMonth = [
+    31,
+    leapYear ? 29 : 28,
+    31,
+    30,
+    31,
+    30,
+    31,
+    31,
+    30,
+    31,
+    30,
+    31,
+  ];
+  if (day > (daysInMonth[month - 1] as number)) {
+    return null;
+  }
   return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
 

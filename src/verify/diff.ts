@@ -240,9 +240,11 @@ export function auditChanges(
 ): ChangeAuditResult {
   const mismatchedChanges: Array<{ change: ChangeEvidence; reason: string }> = [];
   const actualDiffs = computeActualDiffs(original, candidate);
+  const matchedActualIndexes = new Set<number>();
+  const exactlyMatchedDeclarations = new Set<number>();
 
   // 1. Verify each declared change
-  for (const change of declaredChanges) {
+  for (const [declaredIndex, change] of declaredChanges.entries()) {
     // Validate rule indexes
     if (!Array.isArray(change.rule_indexes) || change.rule_indexes.length === 0) {
       mismatchedChanges.push({
@@ -344,35 +346,32 @@ export function auditChanges(
         });
       }
     }
+
+    const exactIndex = actualDiffs.findIndex((diff, index) =>
+      !matchedActualIndexes.has(index) &&
+      diff.path === change.path &&
+      diff.operation === change.operation
+    );
+    if (exactIndex === -1) {
+      mismatchedChanges.push({
+        change,
+        reason: `Declared ${change.operation} at '${change.path}' does not match an exact computed leaf difference.`,
+      });
+    } else {
+      matchedActualIndexes.add(exactIndex);
+      exactlyMatchedDeclarations.add(declaredIndex);
+    }
   }
 
   // 2. Check for undeclared changes
-  // An actual difference is covered by a declared change if the change path equals or is a parent of the diff path
-  const undeclaredChanges = actualDiffs.filter((diff) => {
-    return !declaredChanges.some((declared) => {
-      if (declared.path === diff.path) {
-        return true;
-      }
-      // If declared path is a parent of diff path (e.g. declared is "" or "/address" and diff is "/address/street")
-      if (declared.path === "") {
-        return true;
-      }
-      return diff.path.startsWith(declared.path + "/");
-    });
-  });
+  const undeclaredChanges = actualDiffs.filter((_diff, index) =>
+    !matchedActualIndexes.has(index)
+  );
 
   // 3. Check for spurious changes (declared changes that did not alter the document)
-  const spuriousChanges = declaredChanges.filter((declared) => {
-    return !actualDiffs.some((diff) => {
-      if (diff.path === declared.path) {
-        return true;
-      }
-      if (declared.path === "") {
-        return true;
-      }
-      return diff.path.startsWith(declared.path + "/");
-    });
-  });
+  const spuriousChanges = declaredChanges.filter((_declared, index) =>
+    !exactlyMatchedDeclarations.has(index)
+  );
 
   const valid =
     mismatchedChanges.length === 0 &&

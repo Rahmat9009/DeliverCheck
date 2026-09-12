@@ -82,6 +82,9 @@ Hashes use `sha256:<64 lowercase hexadecimal characters>`. `original_hash` is co
 - Identifiers remain strings when leading zeros or exact representation are meaningful.
 - Ambiguous dates, numbers, currencies, and contradictory requirements require `needs_information`.
 - Ajv validation disables coercion, defaults, and silent property removal.
+- Full JSON Schema format enforcement supports exactly `date`, `date-time`, `email`, and `uri` through pinned `ajv-formats@3.0.1`.
+- Requests accept at most 200 explicit rules and use a 240-second application deadline.
+- Target schemas must stay within bounded complexity and regular-expression limits; only bounded acyclic local JSON Pointer references are supported.
 - Format and schema checks are never represented as proof of factual truth.
 
 See `docs/core-pipeline.md` for the repair-proposal, independent-verification, and SharedOS authorization flow.

@@ -1,8 +1,4 @@
-import {
-  Ajv2020,
-  type ErrorObject,
-  type ValidateFunction,
-} from "ajv/dist/2020.js";
+import type { ErrorObject, ValidateFunction } from "ajv/dist/2020.js";
 
 import type {
   ChangeEvidence,
@@ -18,6 +14,7 @@ import {
   computeOriginalHash,
 } from "./canonical.js";
 import { auditChanges, type ChangeAuditResult } from "./diff.js";
+import { createStrictAjv } from "./ajv.js";
 import {
   assertSafePayloadSize,
   assertSafeStructure,
@@ -69,15 +66,6 @@ export interface VerifyCandidateOptions {
   unresolved?: UnresolvedIssue[] | undefined;
   limits?: Partial<SecurityLimits> | undefined;
 }
-
-const ajvOptions = {
-  allErrors: true,
-  coerceTypes: false,
-  removeAdditional: false,
-  strict: true,
-  useDefaults: false,
-  validateFormats: false,
-} as const;
 
 function formatAjvErrors(errors: ErrorObject[] | null | undefined): ValidationError[] {
   return (errors ?? []).map((error) => ({
@@ -209,8 +197,8 @@ export function verifyCandidate(options: VerifyCandidateOptions): VerificationRe
         name: "target_schema_security",
         method: "ast_inspection",
         outcome: "passed",
-        diagnostic: "Target schema contains no dangerous prototype keys, bounded depth/nodes, and no unsupported remote references.",
-        evidence: "Target schema passed prototype pollution, remote reference, and depth checks.",
+        diagnostic: "Target schema passed prototype, complexity, local-reference graph, and bounded-pattern checks.",
+        evidence: "Target schema passed bounded structure, reference, and regular-expression checks.",
         proves_factual_truth: false,
       });
     } catch (err: unknown) {
@@ -294,7 +282,7 @@ export function verifyCandidate(options: VerifyCandidateOptions): VerificationRe
     let validator: ValidateFunction | undefined;
     try {
       const schemaClone = structuredClone(options.request.target_schema);
-      const ajv = new Ajv2020(ajvOptions);
+      const ajv = createStrictAjv();
       validator = ajv.compile(schemaClone);
       detailedChecks.push({
         name: "target_schema_compilation",
@@ -306,17 +294,18 @@ export function verifyCandidate(options: VerifyCandidateOptions): VerificationRe
       });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Target schema compilation failed.";
+      const safeMessage = "Target schema was rejected or could not be compiled safely.";
       detailedChecks.push({
         name: "target_schema_compilation",
         method: "ajv_2020_strict_compile",
         outcome: "failed",
         diagnostic: msg,
-        evidence: msg,
+        evidence: safeMessage,
         proves_factual_truth: false,
       });
       unresolved.push({
         code: "invalid_target_schema",
-        message: msg,
+        message: safeMessage,
       });
     }
 
@@ -397,16 +386,34 @@ export function verifyCandidate(options: VerifyCandidateOptions): VerificationRe
 
     // 9. Exact Candidate Schema Validation (no coercion, no defaults, no removal)
     if (validator) {
-      // Ensure candidate cannot be mutated
-      const candidateSnapshot = canonicalJsonStringify(options.candidate);
-      const isValid = validator(options.candidate);
-      const afterSnapshot = canonicalJsonStringify(options.candidate);
-
-      if (candidateSnapshot !== afterSnapshot) {
-        throw new Error("Critical invariant violated: candidate was mutated during schema validation.");
+      let isValid = false;
+      let validationFault: unknown;
+      try {
+        // Ensure candidate cannot be mutated.
+        const candidateSnapshot = canonicalJsonStringify(options.candidate);
+        isValid = validator(options.candidate);
+        const afterSnapshot = canonicalJsonStringify(options.candidate);
+        if (candidateSnapshot !== afterSnapshot) {
+          throw new Error("Candidate mutation detected during schema validation.");
+        }
+      } catch (error) {
+        validationFault = error;
       }
 
-      if (isValid) {
+      if (validationFault !== undefined) {
+        detailedChecks.push({
+          name: "candidate_schema_validation",
+          method: "ajv_strict_validate",
+          outcome: "failed",
+          diagnostic: "Target schema execution failed safely.",
+          evidence: "Target schema could not be evaluated safely.",
+          proves_factual_truth: false,
+        });
+        unresolved.push({
+          code: "invalid_target_schema",
+          message: "Target schema could not be evaluated safely.",
+        });
+      } else if (isValid) {
         detailedChecks.push({
           name: "candidate_schema_validation",
           method: "ajv_strict_validate",

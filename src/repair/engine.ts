@@ -84,8 +84,9 @@ function tryValue(
   justification: string,
   ruleIndexes: number[],
   identifierPreserved = false,
+  rootSchema?: JsonObject,
 ): RepairAttempt | null {
-  if (fieldIsValid(key, candidateValue, subschema, required)) {
+  if (fieldIsValid(key, candidateValue, subschema, required, rootSchema)) {
     return { value: candidateValue, justification, ruleIndexes: uniqueSorted(ruleIndexes), identifierPreserved };
   }
   return null;
@@ -105,6 +106,7 @@ function findRepairStrategy(
   directives: readonly Directive[],
   required: boolean,
   skipConstantRequirement: boolean,
+  rootSchema: JsonObject,
 ): RepairAttempt | null {
   const identifierDirectives = directives.filter(
     (directive): directive is IdentifierPreserveDirective => directive.kind === "identifier_preserve" && directive.field === key,
@@ -128,6 +130,7 @@ function findRepairStrategy(
           `Explicit rule ${formatRuleList(identifierDirectives.map((d) => d.ruleIndex))} defines a ${targetLength}-character identifier and requires preserving leading zeros.`,
           identifierDirectives.map((d) => d.ruleIndex),
           true,
+          rootSchema,
         );
         if (attempt) return attempt;
       }
@@ -149,6 +152,8 @@ function findRepairStrategy(
           required,
           `Explicit rule ${formatRuleList(constantDirectives.map((d) => d.ruleIndex))} requires "${key}" to be "${required0.value}".`,
           constantDirectives.map((d) => d.ruleIndex),
+          false,
+          rootSchema,
         );
         if (attempt) return attempt;
       }
@@ -166,6 +171,8 @@ function findRepairStrategy(
           required,
           `Explicit rule ${directive.ruleIndex} normalizes "${key}" value "${directive.fromValue}" to "${directive.toValue}".`,
           [directive.ruleIndex],
+          false,
+          rootSchema,
         );
         if (attempt) return attempt;
       }
@@ -184,6 +191,8 @@ function findRepairStrategy(
             required,
             `Explicit rule ${directive.ruleIndex} permits removing surrounding whitespace from "${key}".`,
             [directive.ruleIndex],
+            false,
+            rootSchema,
           );
           if (attempt) return attempt;
         }
@@ -201,6 +210,8 @@ function findRepairStrategy(
             required,
             `Explicit rule ${directive.ruleIndex} fixes the day/month order for "${key}", so "${value}" reformats unambiguously to "${iso}".`,
             [directive.ruleIndex],
+            false,
+            rootSchema,
           );
           if (attempt) return attempt;
         }
@@ -216,6 +227,8 @@ function findRepairStrategy(
           required,
           `Explicit rule ${directive.ruleIndex} maps the "${directive.symbol}" symbol to "${directive.code}" for "${key}".`,
           [directive.ruleIndex],
+          false,
+          rootSchema,
         );
         if (attempt) return attempt;
       }
@@ -234,6 +247,8 @@ function findRepairStrategy(
               required,
               `Explicit rule ${directive.ruleIndex} defines the comma in "${key}" as a ${directive.commaMeans} separator.`,
               [directive.ruleIndex],
+              false,
+              rootSchema,
             );
             if (attempt) return attempt;
           }
@@ -245,11 +260,18 @@ function findRepairStrategy(
   return null;
 }
 
-function classifyUnresolved(key: string, value: JsonValue, subschema: JsonValue, pointer: string, required: boolean): UnresolvedIssue {
-  if (fieldSchemaCompileFailed(key, value, subschema, required)) {
+function classifyUnresolved(
+  key: string,
+  value: JsonValue,
+  subschema: JsonValue,
+  pointer: string,
+  required: boolean,
+  rootSchema: JsonObject,
+): UnresolvedIssue {
+  if (fieldSchemaCompileFailed(key, value, subschema, required, rootSchema)) {
     return {
       code: "invalid_target_schema",
-      message: `The target schema for "${key}" could not be compiled: ${fieldValidationErrors(key, value, subschema, required)}`,
+      message: `The target schema for "${key}" could not be compiled: ${fieldValidationErrors(key, value, subschema, required, rootSchema)}`,
       path: pointer,
     };
   }
@@ -285,7 +307,7 @@ function classifyUnresolved(key: string, value: JsonValue, subschema: JsonValue,
 
   return {
     code: "schema_violation",
-    message: `"${key}" does not satisfy the target schema and no explicit rule justifies a safe transformation. ${fieldValidationErrors(key, value, subschema, required)}`,
+    message: `"${key}" does not satisfy the target schema and no explicit rule justifies a safe transformation. ${fieldValidationErrors(key, value, subschema, required, rootSchema)}`,
     path: pointer,
   };
 }
@@ -438,6 +460,26 @@ export function repairJson(request: DeliverCheckRequest, options: RepairOptions 
   const schemaHash = hashJsonValue(request.target_schema);
   const checks = baseChecks();
 
+  if (request.explicit_rules.length > MAX_EXPLICIT_RULES) {
+    checks.push({
+      name: "explicit_rule_limit",
+      status: "failed",
+      evidence: `The request contains more than the supported ${MAX_EXPLICIT_RULES} explicit rules.`,
+      proves_factual_truth: false,
+    });
+    return buildCannotRepair(
+      jobId,
+      checks,
+      [{
+        code: "schema_violation",
+        message: `The request contains ${request.explicit_rules.length} explicit rules; the maximum is ${MAX_EXPLICIT_RULES}. No rules were processed.`,
+      }],
+      originalHash,
+      schemaHash,
+      elapsedMsSince(start, now),
+    );
+  }
+
   let parsedSource: JsonValue;
   try {
     parsedSource = JSON.parse(request.source_text) as JsonValue;
@@ -500,8 +542,7 @@ export function repairJson(request: DeliverCheckRequest, options: RepairOptions 
   });
 
   const fieldNames = isPlainObject(request.target_schema) ? collectFieldNames(request.target_schema) : [];
-  const rulesToParse = request.explicit_rules.slice(0, MAX_EXPLICIT_RULES);
-  const { directives, contradictions } = parseExplicitRules(rulesToParse, fieldNames);
+  const { directives, contradictions } = parseExplicitRules(request.explicit_rules, fieldNames);
 
   checks.push({
     name: "rule_consistency",
@@ -581,14 +622,29 @@ export function repairJson(request: DeliverCheckRequest, options: RepairOptions 
       }
 
       const currentValue = candidate[key] as JsonValue;
-      if (fieldIsValid(key, currentValue, subschema, isRequired)) {
+      if (fieldIsValid(key, currentValue, subschema, isRequired, request.target_schema)) {
         continue;
       }
 
-      const attempt = findRepairStrategy(key, currentValue, subschema, directives, isRequired, contradictedFields.has(key));
+      const attempt = findRepairStrategy(
+        key,
+        currentValue,
+        subschema,
+        directives,
+        isRequired,
+        contradictedFields.has(key),
+        request.target_schema,
+      );
       if (!attempt) {
         if (!contradictedFields.has(key)) {
-          unresolved.push(classifyUnresolved(key, currentValue, subschema, pointer, isRequired));
+          unresolved.push(classifyUnresolved(
+            key,
+            currentValue,
+            subschema,
+            pointer,
+            isRequired,
+            request.target_schema,
+          ));
         }
         continue;
       }
@@ -602,7 +658,14 @@ export function repairJson(request: DeliverCheckRequest, options: RepairOptions 
         rule_indexes: attempt.ruleIndexes,
       });
       if (!applied) {
-        unresolved.push(classifyUnresolved(key, currentValue, subschema, pointer, isRequired));
+        unresolved.push(classifyUnresolved(
+          key,
+          currentValue,
+          subschema,
+          pointer,
+          isRequired,
+          request.target_schema,
+        ));
         continue;
       }
 

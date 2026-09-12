@@ -17,7 +17,7 @@ Vercel currently supports Node.js 24 and Web-standard function handlers. This re
 
 Each service invocation creates a fresh core pipeline. The implementation stores no customer payload, session, audit history, or job data in the filesystem or across calls. Module reuse is limited to code and the MCP HTTP dispatcher.
 
-The 64 KiB limit is enforced while reading the Web request stream, so a forged or absent `Content-Length` cannot bypass it. Each call receives an abort signal combining client cancellation with the five-minute application deadline. Public errors are converted to stable sanitized bodies. Query parameters are rejected, request hosts and browser origins must match deployment-controlled origins, and caller headers or body fields never become SharedOS identity or grants. The unauthenticated MCP adapter strips authorization, cookie, identity, and grant headers before protocol dispatch.
+The 64 KiB limit is enforced while reading the Web request stream, so a forged or absent `Content-Length` cannot bypass it. Each call receives an abort signal combining client cancellation with a 240-second application deadline, leaving 60 seconds before Vercel's configured 300-second termination boundary. Public errors are converted to stable sanitized bodies. Query parameters are rejected, request hosts and browser origins must match deployment-controlled origins, and caller headers or body fields never become SharedOS identity or grants. The unauthenticated MCP adapter strips authorization, cookie, identity, and grant headers before protocol dispatch.
 
 ## MCP compatibility
 

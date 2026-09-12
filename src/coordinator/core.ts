@@ -63,6 +63,18 @@ export interface CorePipelineOptions {
   authorized_stages?: readonly WorkflowStage[];
 }
 
+export type AuditedPipelineExecution =
+  | {
+      status: "succeeded";
+      result: DeliverCheckResult;
+      audit: readonly SanitizedAuditOutcome[];
+    }
+  | {
+      status: "failed";
+      error: unknown;
+      audit: readonly SanitizedAuditOutcome[];
+    };
+
 function stageMatchesProposal(stage: RepairStageResult): boolean {
   return (
     (stage.status === "candidate_proposed" && stage.proposal.status === "passed_checks") ||
@@ -269,7 +281,6 @@ export class DeliverCheckCorePipeline {
   readonly #now: () => number;
   readonly #idFactory: WorkflowIdFactory;
   readonly #authorizedStages: readonly WorkflowStage[] | undefined;
-  #lastAudit: readonly SanitizedAuditOutcome[] = [];
 
   constructor(options: CorePipelineOptions = {}) {
     this.#ports =
@@ -282,48 +293,56 @@ export class DeliverCheckCorePipeline {
     this.#authorizedStages = options.authorized_stages;
   }
 
-  auditSnapshot(): readonly SanitizedAuditOutcome[] {
-    return structuredClone(this.#lastAudit);
+  async run(input: unknown, signal?: AbortSignal): Promise<DeliverCheckResult> {
+    const execution = await this.runWithAudit(input, signal);
+    if (execution.status === "failed") {
+      throw execution.error;
+    }
+    return execution.result;
   }
 
-  async run(input: unknown, signal?: AbortSignal): Promise<DeliverCheckResult> {
-    const validation = validateRequestContract(input);
-    if (!validation.valid) {
-      throw new CorePipelineError(
-        "invalid_request",
-        "The input violates the frozen DeliverCheck request contract.",
-      );
-    }
-
-    let ports: CoordinatorPorts;
+  async runWithAudit(
+    input: unknown,
+    signal?: AbortSignal,
+  ): Promise<AuditedPipelineExecution> {
+    let workflow: SharedOSWorkflow | undefined;
     try {
-      ports = requireCoordinatorPorts(this.#ports);
-    } catch (error) {
-      if (error instanceof CoordinatorNotReadyError) {
+      const validation = validateRequestContract(input);
+      if (!validation.valid) {
         throw new CorePipelineError(
-          "dependency_unavailable",
-          error.message,
-          undefined,
-          { cause: error },
+          "invalid_request",
+          "The input violates the frozen DeliverCheck request contract.",
         );
       }
-      throw error;
-    }
 
-    const request = structuredClone(validation.value);
-    const start = this.#now();
-    const workflowOptions: SharedOSWorkflowOptions = {
-      ports,
-      job_id: request.request_id,
-      now: this.#now,
-      id_factory: this.#idFactory,
-      ...(this.#authorizedStages === undefined
-        ? {}
-        : { authorized_stages: this.#authorizedStages }),
-    };
-    const workflow = new SharedOSWorkflow(workflowOptions);
+      let ports: CoordinatorPorts;
+      try {
+        ports = requireCoordinatorPorts(this.#ports);
+      } catch (error) {
+        if (error instanceof CoordinatorNotReadyError) {
+          throw new CorePipelineError(
+            "dependency_unavailable",
+            error.message,
+            undefined,
+            { cause: error },
+          );
+        }
+        throw error;
+      }
 
-    try {
+      const request = structuredClone(validation.value);
+      const start = this.#now();
+      const workflowOptions: SharedOSWorkflowOptions = {
+        ports,
+        job_id: request.request_id,
+        now: this.#now,
+        id_factory: this.#idFactory,
+        ...(this.#authorizedStages === undefined
+          ? {}
+          : { authorized_stages: this.#authorizedStages }),
+      };
+      workflow = new SharedOSWorkflow(workflowOptions);
+
       let repairStage: RepairStageResult;
       try {
         repairStage = await workflow.invokeRepair(request, signal);
@@ -341,13 +360,22 @@ export class DeliverCheckCorePipeline {
       }
 
       assertVerificationAccepted(verification, proposal);
-      return buildFinalResult(
+      const result = buildFinalResult(
         proposal,
         verification,
         elapsedSince(start, this.#now),
       );
-    } finally {
-      this.#lastAudit = workflow.auditSnapshot();
+      return {
+        status: "succeeded",
+        result,
+        audit: workflow.auditSnapshot(),
+      };
+    } catch (error) {
+      return {
+        status: "failed",
+        error,
+        audit: workflow?.auditSnapshot() ?? [],
+      };
     }
   }
 }

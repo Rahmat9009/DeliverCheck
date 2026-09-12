@@ -3,7 +3,7 @@ import type { PublicServiceName } from "../integrations/public-services.js";
 
 export const SERVICE_VERSION = "0.1.0";
 export const MAX_REQUEST_BODY_BYTES = 64 * 1024;
-export const SERVICE_DEADLINE_MS = 5 * 60 * 1_000;
+export const SERVICE_DEADLINE_MS = 4 * 60 * 1_000;
 
 export interface BillingDeclaration {
   price_credits: 0 | 7;

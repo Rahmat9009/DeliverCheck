@@ -1,8 +1,4 @@
-import {
-  Ajv2020,
-  type ErrorObject,
-  type ValidateFunction,
-} from "ajv/dist/2020.js";
+import type { ErrorObject, ValidateFunction } from "ajv/dist/2020.js";
 
 import requestSchema from "../../contracts/request.schema.json" with { type: "json" };
 import resultSchema from "../../contracts/result.schema.json" with { type: "json" };
@@ -14,17 +10,10 @@ import type {
   JsonObject,
   ValidationError,
 } from "../types.js";
+import { createStrictAjv } from "./ajv.js";
+import { assertSafeTargetSchema } from "./security.js";
 
-const ajvOptions = {
-  allErrors: true,
-  coerceTypes: false,
-  removeAdditional: false,
-  strict: true,
-  useDefaults: false,
-  validateFormats: false,
-} as const;
-
-const contractAjv = new Ajv2020(ajvOptions);
+const contractAjv = createStrictAjv();
 const requestValidator = contractAjv.compile(requestSchema);
 const resultValidator = contractAjv.compile(resultSchema);
 
@@ -64,9 +53,10 @@ export function validateCandidate(
   candidate: unknown,
   targetSchema: JsonObject,
 ): CandidateValidation {
-  const candidateAjv = new Ajv2020(ajvOptions);
+  const candidateAjv = createStrictAjv();
 
   try {
+    assertSafeTargetSchema(targetSchema);
     const schemaCopy = structuredClone(targetSchema);
     const validator = candidateAjv.compile(schemaCopy);
     const valid = validator(candidate);
@@ -84,8 +74,7 @@ export function validateCandidate(
           instance_path: "",
           schema_path: "",
           keyword: "invalid_target_schema",
-          message:
-            error instanceof Error ? error.message : "Target schema compilation failed.",
+          message: "Target schema was rejected or could not be evaluated safely.",
         },
       ],
       proves_factual_truth: false,

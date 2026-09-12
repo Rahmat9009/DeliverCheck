@@ -1,10 +1,11 @@
-import type { DeliverCheckResult } from "../types.js";
 import type { CorePipelinePort } from "../service/handlers.js";
 import { ServiceError } from "../service/errors.js";
 import type { SanitizedAuditOutcome } from "../sharedos/audit.js";
+import type { AuditedPipelineExecution } from "../coordinator/core.js";
+import type { DeliverCheckResult } from "../types.js";
 
 export interface AuditableCorePipeline extends CorePipelinePort {
-  auditSnapshot(): readonly SanitizedAuditOutcome[];
+  runWithAudit(input: unknown, signal?: AbortSignal): Promise<AuditedPipelineExecution>;
 }
 
 export interface SharedOSCloudAuditExporter {
@@ -42,21 +43,15 @@ export function withOptionalCloudAudit(
 
   return {
     async run(input: unknown, signal?: AbortSignal): Promise<DeliverCheckResult> {
-      let result: DeliverCheckResult | undefined;
-      let pipelineError: unknown;
-      try {
-        result = await pipeline.run(input, signal);
-      } catch (error) {
-        pipelineError = error;
-      }
+      const execution = await pipeline.runWithAudit(input, signal);
 
       try {
         if (options.exporter === undefined) {
           throw auditExportUnavailable();
         }
-        await options.exporter.export(pipeline.auditSnapshot(), signal);
+        await options.exporter.export(execution.audit, signal);
       } catch (exportError) {
-        if (pipelineError === undefined) {
+        if (execution.status === "succeeded") {
           throw exportError instanceof ServiceError
             ? exportError
             : new ServiceError(
@@ -69,18 +64,10 @@ export function withOptionalCloudAudit(
         }
       }
 
-      if (pipelineError !== undefined) {
-        throw pipelineError;
+      if (execution.status === "failed") {
+        throw execution.error;
       }
-      if (result === undefined) {
-        throw new ServiceError(
-          500,
-          "operational",
-          "internal_error",
-          "The service could not complete the request.",
-        );
-      }
-      return result;
+      return execution.result;
     },
   };
 }

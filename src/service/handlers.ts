@@ -6,6 +6,7 @@ import {
   PUBLIC_SERVICE_CURRENCY,
 } from "../integrations/public-services.js";
 import type { DeliverCheckRequest, JsonObject } from "../types.js";
+import { MAX_EXPLICIT_RULES } from "../repair/constants.js";
 import {
   assertSafePayloadSize,
   assertSafeStructure,
@@ -84,6 +85,14 @@ function validatedRequest(input: unknown): DeliverCheckRequest {
     maxPayloadBytes: MAX_REQUEST_BODY_BYTES,
   });
   assertSafeTargetSchema(validation.value.target_schema);
+  if (validation.value.explicit_rules.length > MAX_EXPLICIT_RULES) {
+    throw new ServiceError(
+      400,
+      "request",
+      "explicit_rule_limit_exceeded",
+      `At most ${MAX_EXPLICIT_RULES} explicit rules are accepted per request.`,
+    );
+  }
   return structuredClone(validation.value);
 }
 

@@ -52,7 +52,7 @@ async function expectPipelineError(
 describe("DeliverCheck core pipeline", () => {
   it("independently accepts already-valid JSON through both authorized stages", async () => {
     const pipeline = createCorePipeline({ now: FIXED_NOW });
-    const result = await pipeline.run(
+    const execution = await pipeline.runWithAudit(
       request({
         source_text: JSON.stringify({ status: "complete" }),
         target_schema: objectSchema(
@@ -62,6 +62,9 @@ describe("DeliverCheck core pipeline", () => {
       }),
     );
 
+    expect(execution.status).toBe("succeeded");
+    if (execution.status !== "succeeded") throw new Error("expected success");
+    const { result } = execution;
     expect(result.status).toBe("passed_checks");
     expect(result.changes).toEqual([]);
     expect(result.checks.every((check) => check.status === "passed")).toBe(true);
@@ -69,8 +72,7 @@ describe("DeliverCheck core pipeline", () => {
       "candidate_hash_verification",
     );
 
-    const allowed = pipeline
-      .auditSnapshot()
+    const allowed = execution.audit
       .filter((event) => event.type === "authorization.checked");
     expect(allowed).toMatchObject([
       {
@@ -332,18 +334,17 @@ describe("DeliverCheck core pipeline", () => {
       authorized_stages: ["repair"],
     });
 
-    await expectPipelineError(
-      pipeline.run(
-        request({
+    const execution = await pipeline.runWithAudit(
+      request({
           source_text: JSON.stringify({ value: "valid" }),
           target_schema: objectSchema({ value: { const: "valid" } }, ["value"]),
-        }),
-      ),
-      { code: "stage_denied", stage: "verifier" },
+      }),
     );
+    expect(execution.status).toBe("failed");
+    if (execution.status !== "failed") throw new Error("expected failure");
+    expect(execution.error).toMatchObject({ code: "stage_denied", stage: "verifier" });
     expect(
-      pipeline
-        .auditSnapshot()
+      execution.audit
         .filter((event) => event.type === "authorization.checked"),
     ).toMatchObject([
       {

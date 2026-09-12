@@ -44,7 +44,7 @@ The investigation used only read-only command discovery, the locally cached Shar
 
 - Vercel currently supports Node.js 24, and `package.json` may select it with a compatible engine range.
 - Vercel Functions accept Web-standard `Request` objects and return `Response` objects. Files under `api/` become functions without a framework.
-- Function duration can be set in `vercel.json`. DeliverCheck configures a 300-second maximum with Fluid compute and cancellation forwarding, matching its five-minute application deadline.
+- Function duration can be set in `vercel.json`. DeliverCheck configures a 300-second maximum with Fluid compute and cancellation forwarding. Its application deadline is 240 seconds so sanitized timeout handling has a 60-second platform margin.
 - Vercel officially documents hosting MCP over Streamable HTTP. Independently, the pinned official MCP SDK documents that `createMcpHandler` runs its factory once per HTTP request, retains no instance state, and scales horizontally.
 - DeliverCheck's two tools need no sessions, resumability, subscriptions, server push, or filesystem state. The existing Streamable HTTP transport is therefore compatible with stateless Vercel Functions for this scope.
 - Sources: [Vercel Node.js versions](https://vercel.com/docs/functions/runtimes/node-js/node-js-versions), [Functions API](https://vercel.com/docs/functions/functions-api-reference), [duration configuration](https://vercel.com/docs/functions/configuring-functions/duration), [Vercel MCP guide](https://vercel.com/docs/mcp/deploy-mcp-servers-to-vercel), and [official MCP HTTP serving guide](https://github.com/modelcontextprotocol/typescript-sdk/blob/main/docs/serving/http.md).

@@ -13,6 +13,8 @@ Checkpoint 3 connects the deterministic repair engine and independent verifier t
 
 The repairer has no verdict grant, and the verifier has no candidate grant. A job key is derived from the request ID and grants use `exact` scope, preventing cross-job access. The existing standalone `npm run sharedos:proof` remains the direct negative-capability proof.
 
+`runWithAudit` returns a discriminated success/failure outcome together with that invocation's immutable sanitized audit snapshot. Cloud export consumes this exact pair. The core keeps no shared “last audit” slot, so concurrent requests cannot retrieve or export another job's audit evidence.
+
 ## Failure model
 
 `needs_information` remains a normal result when an explicit fact or interpretation is missing. A justified `cannot_repair` proposal can also remain a normal result after verification.

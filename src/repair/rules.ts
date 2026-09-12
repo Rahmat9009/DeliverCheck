@@ -95,7 +95,10 @@ const RENAME_RE = /^rename\s+(?:field\s+)?"([^"]+)"\s+to\s+"([^"]+)"\s*\.?$/i;
 const MOVE_RE = /^move\s+"([^"]+)"\s+to\s+"([^"]+)"\s*\.?$/i;
 const ENUM_NORMALIZE_RE = /^normalize\s+"([^"]+)"\s+value\s+"([^"]+)"\s+to\s+"([^"]+)"\s*\.?$/i;
 const TRIM_RE = /\b(?:trim|remove)\b[\s\S]*?\bwhitespace\b[\s\S]*?\bfrom\b\s+(?:"([^"]+)"|(all fields|any field))/i;
-const CONSTANT_RE = /^(?:the\s+)?"?([A-Za-z0-9_]+)"?\s+(?:field\s+)?must\s+be\s+"?([^".]+?)"?\s*\.?$/i;
+const QUOTED_CONSTANT_RE =
+  /^(?:the\s+)?(?:"([^"]+)"|([A-Za-z0-9_]+))\s+(?:field\s+)?must\s+be\s+"([^"]+)"\s*\.?$/i;
+const TOKEN_CONSTANT_RE =
+  /^(?:the\s+)?(?:"([^"]+)"|([A-Za-z0-9_]+))\s+(?:field\s+)?must\s+be\s+([A-Z][A-Z0-9_-]{1,15})\s*\.?$/;
 const DATE_FORMAT_RE =
   /^dates?\s+(?:in\s+"([^"]+)"\s+)?(?:are|use|follow)\s+(?:the\s+)?(?:format\s+)?"?(DD\/MM\/YYYY|MM\/DD\/YYYY|YYYY-MM-DD)"?\s*\.?$/i;
 const NUMBER_DECIMAL_RE = /^"?,"?\s+is\s+the\s+decimal\s+separator\s+for\s+"([^"]+)"\s*\.?$/i;
@@ -203,10 +206,10 @@ export function parseExplicitRules(explicitRules: readonly string[], fieldNames:
       });
     }
 
-    const constant = CONSTANT_RE.exec(rule);
+    const constant = QUOTED_CONSTANT_RE.exec(rule) ?? TOKEN_CONSTANT_RE.exec(rule);
     if (constant) {
-      const field = constant[1] as string;
-      const value = constant[2] as string;
+      const field = (constant[1] ?? constant[2]) as string;
+      const value = constant[3] as string;
       directives.push({ kind: "constant_requirement", ruleIndex, field, value });
       const existing = constantsByField.get(field) ?? [];
       existing.push({ value, ruleIndex });

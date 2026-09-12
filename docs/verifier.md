@@ -11,7 +11,7 @@ The verifier enforces strict safety invariants without trusting outputs from rep
 ## Key Safety Invariants
 
 1. **Exact schema validation without mutation or coercion**:
-   Target schemas are compiled using Ajv 2020 in strict mode with `coerceTypes: false`, `useDefaults: false`, and `removeAdditional: false`. No property is coerced, no default value is inserted, and no additional property is silently removed.
+   Target schemas are compiled using Ajv 2020 in strict mode with `coerceTypes: false`, `useDefaults: false`, and `removeAdditional: false`. No property is coerced, no default value is inserted, and no additional property is silently removed. Full `date`, `date-time`, `email`, and `uri` checks come from exactly pinned `ajv-formats@3.0.1`; other format names are rejected as unsupported schemas.
 2. **Immutable inputs**:
    Neither the candidate payload nor the target schema is ever mutated. Inputs are deep-frozen or verified with pre/post-validation snapshots.
 3. **Canonical cryptographic hashing (RFC 8785)**:
@@ -21,7 +21,7 @@ The verifier enforces strict safety invariants without trusting outputs from rep
    - Hashes are invariant under key reordering in schemas or candidate objects.
 4. **Change evidence audit**:
    - RFC 6901 JSON pointer traversal resolves exact paths.
-   - Verifies that every declared change matches actual `before` and `after` values.
+   - Verifies that every declared change matches one exact computed leaf path, operation, and `before`/`after` value. Root or parent declarations cannot cover descendant edits.
    - Detects and flags any **undeclared changes** introduced into candidate payloads.
    - Detects and flags **spurious declared changes** where no actual modification occurred.
    - Validates that `rule_indexes` reference valid rules within `request.explicit_rules`.
@@ -39,11 +39,11 @@ The verifier incorporates defenses against adversarial vectors (`src/verify/secu
 | Threat Vector | Mitigation Strategy |
 | :--- | :--- |
 | **Prototype Pollution** | Scans objects for dangerous keys (`__proto__`, `constructor`, `prototype`). Inspects object prototype inheritance chain (`Object.getPrototypeOf`) to reject hijacked prototypes before Ajv compilation or traversal. |
-| **Remote Schema References (SSRF)** | Rejects target schemas containing remote `$ref` URIs (e.g. `http://`, `https://`, `ftp://`, `//`). Only internal document fragments (e.g. `#/$defs/...`) are permitted. |
+| **Schema References** | Rejects remote references, bare root self-reference, `$dynamicRef`, `$recursiveRef`, unresolved local pointers, and cyclic local-reference graphs. Bounded acyclic JSON Pointer references such as `#/$defs/...` and `#/definitions/...` are permitted. |
 | **Depth Bombs / Stack Overflow** | Rejects payloads and schemas exceeding the bounded nesting depth limit (default: 32). |
-| **Schema Complexity / DoS** | Enforces maximum limits on schema AST node count (256) and reference count (64). |
+| **Schema Complexity / DoS** | Enforces maximum limits on schema AST node count (256), reference count (64), pattern length (256 characters), and regex quantifiers (20). Nested quantified groups, quantified alternation, repeated wildcards, backreferences, and lookarounds are rejected by the MVP pattern subset. |
 | **Payload Size Inflation** | Enforces maximum byte size limit on `source_text` (default: 1 MB). |
-| **Execution Timeout** | Executes verification under execution timeout guards (default: 1000ms). |
+| **Synchronous Timing Guard** | Measures verification and rejects an over-budget result after synchronous work returns (default: 1000ms). It cannot pre-empt blocked JavaScript; the strict schema and pattern limits above are the preventive controls. |
 
 ---
 

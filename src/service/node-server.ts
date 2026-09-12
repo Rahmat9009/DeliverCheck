@@ -39,7 +39,13 @@ function sendJson(response: ServerResponse, status: number, value: unknown): voi
   response.end(body);
 }
 
-function normalizedHostname(hostHeader: string | undefined): string | undefined {
+interface ParsedHost {
+  hostname: string;
+  host: string;
+  port: string;
+}
+
+function parsedHost(hostHeader: string | undefined): ParsedHost | undefined {
   if (hostHeader === undefined) return undefined;
   try {
     const url = new URL(`http://${hostHeader}`);
@@ -52,7 +58,7 @@ function normalizedHostname(hostHeader: string | undefined): string | undefined 
     ) {
       return undefined;
     }
-    return url.hostname;
+    return { hostname: url.hostname, host: url.host, port: url.port };
   } catch {
     return undefined;
   }
@@ -61,29 +67,48 @@ function normalizedHostname(hostHeader: string | undefined): string | undefined 
 function validateRequestOrigin(
   request: IncomingMessage,
   allowedHostnames: ReadonlySet<string>,
+  serviceOrigin: string | undefined,
 ): void {
-  const host = normalizedHostname(request.headers.host);
-  if (host === undefined || !allowedHostnames.has(host)) {
+  const host = parsedHost(request.headers.host);
+  if (host === undefined || !allowedHostnames.has(host.hostname)) {
+    throw new ServiceError(403, "security", "host_rejected", "The request host is not allowed.");
+  }
+  if (serviceOrigin !== undefined) {
+    const configured = new URL(serviceOrigin);
+    if (configured.hostname === host.hostname && configured.host !== host.host) {
+      throw new ServiceError(403, "security", "host_rejected", "The request host is not allowed.");
+    }
+  } else if (
+    host.port !== "" &&
+    host.port !== String(request.socket.localPort ?? "")
+  ) {
     throw new ServiceError(403, "security", "host_rejected", "The request host is not allowed.");
   }
   const origin = request.headers.origin;
   if (origin !== undefined) {
-    let originHost: string | undefined;
+    let parsedOrigin: URL | undefined;
     try {
-      const parsedOrigin = new URL(origin);
+      const candidate = new URL(origin);
       if (
-        parsedOrigin.username === "" &&
-        parsedOrigin.password === "" &&
-        parsedOrigin.pathname === "/" &&
-        parsedOrigin.search === "" &&
-        parsedOrigin.hash === ""
+        candidate.username === "" &&
+        candidate.password === "" &&
+        candidate.pathname === "/" &&
+        candidate.search === "" &&
+        candidate.hash === ""
       ) {
-        originHost = parsedOrigin.hostname;
+        parsedOrigin = candidate;
       }
     } catch {
-      originHost = undefined;
+      parsedOrigin = undefined;
     }
-    if (originHost === undefined || !allowedHostnames.has(originHost)) {
+    if (parsedOrigin === undefined || !allowedHostnames.has(parsedOrigin.hostname)) {
+      throw new ServiceError(403, "security", "origin_rejected", "The request origin is not allowed.");
+    }
+    if (
+      serviceOrigin !== undefined &&
+      new URL(serviceOrigin).hostname === parsedOrigin.hostname &&
+      new URL(serviceOrigin).origin !== parsedOrigin.origin
+    ) {
       throw new ServiceError(403, "security", "origin_rejected", "The request origin is not allowed.");
     }
   }
@@ -99,7 +124,7 @@ function requireJsonContentType(request: IncomingMessage): void {
 async function readJsonBody(request: IncomingMessage): Promise<unknown> {
   const declaredLength = Number(request.headers["content-length"]);
   if (Number.isFinite(declaredLength) && declaredLength > MAX_REQUEST_BODY_BYTES) {
-    request.resume();
+    request.pause();
     throw new ServiceError(413, "security", "request_body_too_large", "The request body exceeds 64 KiB.");
   }
 
@@ -109,6 +134,7 @@ async function readJsonBody(request: IncomingMessage): Promise<unknown> {
     const chunk = Buffer.isBuffer(rawChunk) ? rawChunk : Buffer.from(rawChunk as Uint8Array);
     size += chunk.byteLength;
     if (size > MAX_REQUEST_BODY_BYTES) {
+      request.pause();
       throw new ServiceError(413, "security", "request_body_too_large", "The request body exceeds 64 KiB.");
     }
     chunks.push(chunk);
@@ -142,7 +168,7 @@ export function createNodeService(options: NodeServiceOptions = {}): {
 
   const server = createServer(async (request, response) => {
     try {
-      validateRequestOrigin(request, allowedHostnames);
+      validateRequestOrigin(request, allowedHostnames, serviceOrigin);
       const url = new URL(request.url ?? "/", "http://local.invalid");
       if (url.search !== "") {
         throw new ServiceError(400, "security", "query_parameters_rejected", "Query parameters are not accepted.");
@@ -193,6 +219,10 @@ export function createNodeService(options: NodeServiceOptions = {}): {
     } catch (error) {
       if (!response.headersSent) {
         const safe = toServiceError(error);
+        if (safe.code === "request_body_too_large") {
+          response.shouldKeepAlive = false;
+          response.setHeader("connection", "close");
+        }
         sendJson(response, safe.status, publicErrorBody(safe));
       } else if (!response.writableEnded) {
         response.end();

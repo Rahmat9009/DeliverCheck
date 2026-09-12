@@ -71,12 +71,14 @@ await client.close();
 
 ## Security and result semantics
 
-- HTTP request bodies and direct tool `source_text` values are limited to 64 KiB. The schema verifier also applies depth, node-count, and reference-count limits.
+- HTTP request bodies and direct tool `source_text` values are limited to 64 KiB. More than 200 explicit rules rejects the whole request; no suffix is discarded. The schema verifier also applies depth, node-count, reference-count, and regular-expression limits.
 - Service calls require `Content-Type: application/json`. The adapter rejects query parameters and validates `Host` and browser `Origin` values against an operator-controlled allowlist.
-- Remote `$ref` values are rejected. The service performs no URL fetching, arbitrary code execution, shell execution, or credential handling.
+- The standalone Node adapter closes declared-length and chunked requests as soon as they exceed 64 KiB. A Host port must match the configured public origin when one is present; direct local requests with an explicit port must match the listening socket.
+- Remote and cyclic `$ref` values, root self-reference, `$dynamicRef`, and `$recursiveRef` are rejected. Bounded acyclic local JSON Pointer references are supported. The service performs no URL fetching, arbitrary code execution, shell execution, or credential handling.
+- The supported JSON Schema formats are exactly `date`, `date-time`, `email`, and `uri`, validated in full mode by `ajv-formats@3.0.1`.
 - Request-body identity fields violate the frozen contract. HTTP headers are not translated into SharedOS grants. A deployment must establish caller identity in trusted authentication middleware and must not trust a body claim.
 - Public errors contain a category, stable code, and sanitized message. Internal stacks, SharedOS audit details, and complete customer payloads are not returned or logged.
-- Requests have a five-minute deadline. A timeout, dependency failure, authorization denial, or verifier rejection remains an error response and never becomes `passed_checks` or `cannot_repair`.
+- Requests have a 240-second application deadline under the advertised five-minute maximum. A timeout, dependency failure, authorization denial, or verifier rejection remains an error response and never becomes `passed_checks` or `cannot_repair`.
 - A successful diagnosis or repair proves only the stated format and schema checks. Every public diagnosis has `proves_factual_truth: false`, and every verification check in a repair result preserves the same limitation.
 
 The Node adapter in `src/service/node-server.ts` remains suitable for an always-on Node 24 runtime. Stateless Vercel wrappers and their local verification are documented in `docs/vercel-deployment.md`; no hosted resource has been created.

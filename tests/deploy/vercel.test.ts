@@ -3,6 +3,7 @@ import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/cli
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createCorePipeline } from "../../src/coordinator/index.js";
+import { createRepairAdapter, createVerifierAdapter } from "../../src/coordinator/index.js";
 import {
   createHttpsAuditExporter,
   createVercelDeploymentAdapter,
@@ -11,6 +12,7 @@ import {
   type VercelDeploymentAdapter,
 } from "../../src/deploy/index.js";
 import { repairRequest, serviceRequest } from "../service/fixtures.js";
+import type { VerificationAgentPort } from "../../src/coordinator/ports.js";
 import { GET as agentCardRoute } from "../../api/agent-card.js";
 import { GET as healthRoute } from "../../api/health.js";
 import { POST as mcpRoute } from "../../api/mcp.js";
@@ -196,7 +198,7 @@ describe("Vercel stateless deployment adapter", () => {
     const privateDetail = "private-deployment-stack-detail";
     const failingPipeline: AuditableCorePipeline = {
       run: async () => { throw new Error(privateDetail); },
-      auditSnapshot: () => [],
+      runWithAudit: async () => ({ status: "failed", error: new Error(privateDetail), audit: [] }),
     };
     const deployment = adapter({ pipeline_factory: () => failingPipeline });
     const response = await deployment.handle(
@@ -211,7 +213,7 @@ describe("Vercel stateless deployment adapter", () => {
     expect(JSON.parse(text)).toMatchObject({ error: { code: "internal_error" } });
   });
 
-  it("preserves the five-minute application and Vercel limits", async () => {
+  it("keeps the application deadline below Vercel's five-minute limit", async () => {
     const configuration = JSON.parse(
       await readFile(new URL("../../vercel.json", import.meta.url), "utf8"),
     ) as { fluid: boolean; functions: Record<string, { maxDuration: number; supportsCancellation: boolean }> };
@@ -228,7 +230,14 @@ describe("Vercel stateless deployment adapter", () => {
         });
         throw new Error("unreachable");
       },
-      auditSnapshot: () => [],
+      async runWithAudit(_input, signal) {
+        try {
+          await this.run(_input, signal);
+          throw new Error("unreachable");
+        } catch (error) {
+          return { status: "failed", error, audit: [] };
+        }
+      },
     };
     const deployment = adapter({
       deadline_ms: 2,
@@ -282,6 +291,54 @@ describe("Vercel stateless deployment adapter", () => {
 });
 
 describe("optional SharedOS Cloud audit export", () => {
+  it("binds each concurrent export to that exact pipeline run", async () => {
+    let verifierCount = 0;
+    let releaseVerifiers: (() => void) | undefined;
+    const verifierGate = new Promise<void>((resolve) => { releaseVerifiers = resolve; });
+    const realVerifier = createVerifierAdapter();
+    const synchronizedVerifier: VerificationAgentPort = {
+      async invoke(input, signal) {
+        verifierCount += 1;
+        if (verifierCount === 2) releaseVerifiers?.();
+        await verifierGate;
+        return await realVerifier.invoke(input, signal);
+      },
+    };
+    const sharedPipeline = createCorePipeline({
+      ports: { repair: createRepairAdapter(), verifier: synchronizedVerifier },
+    });
+    const batches: string[] = [];
+    const deployment = adapter({
+      environment: { PUBLIC_BASE_URL: BASE_URL, SHAREDOS_KEY: "synthetic-test-key" },
+      pipeline_factory: () => sharedPipeline,
+      cloud_audit_exporter: {
+        async export(events) { batches.push(JSON.stringify(events)); },
+      },
+    });
+
+    const [first, second] = await Promise.all([
+      deployment.handle(
+        "repair",
+        requestFor("/api/v1/repair", "POST", {
+          ...repairRequest(),
+          request_id: "concurrent-a",
+        }),
+      ),
+      deployment.handle(
+        "repair",
+        requestFor("/api/v1/repair", "POST", {
+          ...repairRequest(),
+          request_id: "concurrent-b",
+        }),
+      ),
+    ]);
+
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    expect(batches).toHaveLength(2);
+    expect(batches[0]).not.toBe(batches[1]);
+  });
+
   it("does not export when SHAREDOS_KEY is absent", async () => {
     const exportCall = vi.fn<SharedOSCloudAuditExporter["export"]>();
     const deployment = adapter({

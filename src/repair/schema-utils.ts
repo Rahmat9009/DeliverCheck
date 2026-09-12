@@ -38,12 +38,23 @@ export function collectFieldNames(schema: JsonObject, maxDepth = 4): string[] {
   return [...names];
 }
 
-function wrapperSchemaFor(key: string, subschema: JsonValue, required: boolean): JsonObject {
+function wrapperSchemaFor(
+  key: string,
+  subschema: JsonValue,
+  required: boolean,
+  rootSchema?: JsonObject,
+): JsonObject {
   return {
     type: "object",
     additionalProperties: true,
     properties: { [key]: subschema },
     ...(required ? { required: [key] } : {}),
+    ...(rootSchema?.["$defs"] === undefined
+      ? {}
+      : { $defs: structuredClone(rootSchema["$defs"]) }),
+    ...(rootSchema?.["definitions"] === undefined
+      ? {}
+      : { definitions: structuredClone(rootSchema["definitions"]) }),
   };
 }
 
@@ -53,24 +64,49 @@ function wrapperSchemaFor(key: string, subschema: JsonValue, required: boolean):
  * `validateCandidate`. Keeps this module's schema semantics identical to
  * `src/verify/validate.ts` instead of re-implementing JSON Schema checks.
  *
- * Note: a subschema that relies on `$ref` into the parent document's
- * `$defs` cannot be resolved inside this minimal wrapper. Such fields are
- * out of scope for this checkpoint's field-level repair (see
- * `docs/repair-engine.md`).
+ * Root `$defs` and `definitions` are retained so local references have the
+ * same meaning during field-level and whole-document validation.
  */
-export function fieldIsValid(key: string, value: JsonValue, subschema: JsonValue, required: boolean): boolean {
-  return validateCandidate({ [key]: value }, wrapperSchemaFor(key, subschema, required)).valid;
+export function fieldIsValid(
+  key: string,
+  value: JsonValue,
+  subschema: JsonValue,
+  required: boolean,
+  rootSchema?: JsonObject,
+): boolean {
+  return validateCandidate(
+    { [key]: value },
+    wrapperSchemaFor(key, subschema, required, rootSchema),
+  ).valid;
 }
 
 /** True when a field's validation failure came from a target schema ajv could not compile. */
-export function fieldSchemaCompileFailed(key: string, value: JsonValue, subschema: JsonValue, required: boolean): boolean {
-  const result = validateCandidate({ [key]: value }, wrapperSchemaFor(key, subschema, required));
+export function fieldSchemaCompileFailed(
+  key: string,
+  value: JsonValue,
+  subschema: JsonValue,
+  required: boolean,
+  rootSchema?: JsonObject,
+): boolean {
+  const result = validateCandidate(
+    { [key]: value },
+    wrapperSchemaFor(key, subschema, required, rootSchema),
+  );
   return result.errors.some((error) => error.keyword === "invalid_target_schema");
 }
 
 /** Joins ajv error messages for a single field's validation failure into one human-readable string. */
-export function fieldValidationErrors(key: string, value: JsonValue, subschema: JsonValue, required: boolean): string {
-  const result = validateCandidate({ [key]: value }, wrapperSchemaFor(key, subschema, required));
+export function fieldValidationErrors(
+  key: string,
+  value: JsonValue,
+  subschema: JsonValue,
+  required: boolean,
+  rootSchema?: JsonObject,
+): string {
+  const result = validateCandidate(
+    { [key]: value },
+    wrapperSchemaFor(key, subschema, required, rootSchema),
+  );
   const messages = result.errors.map((error) => `${error.instance_path || `/${key}`}: ${error.message}`);
   return messages.length > 0 ? messages.join("; ") : "Schema validation failed.";
 }

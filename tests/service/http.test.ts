@@ -1,3 +1,4 @@
+import { request as httpRequest } from "node:http";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { createCorePipeline } from "../../src/coordinator/index.js";
@@ -6,6 +7,64 @@ import { repairRequest, serviceRequest } from "./fixtures.js";
 
 async function responseJson(response: Response): Promise<Record<string, unknown>> {
   return await response.json() as Record<string, unknown>;
+}
+
+function rawOversizedRequest(
+  origin: string,
+  mode: "declared" | "chunked",
+): Promise<{ status: number | undefined; connection: string | undefined; body: string }> {
+  const url = new URL("/api/v1/diagnose", origin);
+  return new Promise((resolve, reject) => {
+    const request = httpRequest({
+      hostname: url.hostname,
+      port: url.port,
+      path: url.pathname,
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        ...(mode === "declared" ? { "content-length": 70_000 } : {}),
+      },
+    }, (response) => {
+      const chunks: Buffer[] = [];
+      response.on("data", (chunk: Buffer) => chunks.push(chunk));
+      response.on("end", () => resolve({
+        status: response.statusCode,
+        connection: response.headers.connection,
+        body: Buffer.concat(chunks).toString("utf8"),
+      }));
+    });
+    request.on("error", reject);
+    if (mode === "declared") {
+      request.flushHeaders();
+    } else {
+      request.write("x".repeat(40_000));
+      request.end("x".repeat(40_000));
+    }
+  });
+}
+
+function rawHostRequest(origin: string, host: string): Promise<{
+  status: number | undefined;
+  body: string;
+}> {
+  const url = new URL("/health", origin);
+  return new Promise((resolve, reject) => {
+    const request = httpRequest({
+      hostname: url.hostname,
+      port: url.port,
+      path: url.pathname,
+      headers: { host },
+    }, (response) => {
+      const chunks: Buffer[] = [];
+      response.on("data", (chunk: Buffer) => chunks.push(chunk));
+      response.on("end", () => resolve({
+        status: response.statusCode,
+        body: Buffer.concat(chunks).toString("utf8"),
+      }));
+    });
+    request.on("error", reject);
+    request.end();
+  });
 }
 
 describe("Node REST service adapter", () => {
@@ -60,6 +119,50 @@ describe("Node REST service adapter", () => {
     });
     expect(response.status).toBe(413);
     expect(await responseJson(response)).toMatchObject({ error: { code: "request_body_too_large" } });
+  });
+
+  it.each(["declared", "chunked"] as const)(
+    "closes %s oversized request connections after a sanitized response",
+    async (mode) => {
+      const response = await rawOversizedRequest(running.origin, mode);
+      expect(response.status).toBe(413);
+      expect(response.connection).toBe("close");
+      expect(JSON.parse(response.body)).toMatchObject({
+        error: { code: "request_body_too_large" },
+      });
+    },
+  );
+
+  it("rejects a Host header with the wrong port", async () => {
+    const response = await rawHostRequest(running.origin, "127.0.0.1:1");
+    expect(response.status).toBe(403);
+    expect(JSON.parse(response.body)).toMatchObject({ error: { code: "host_rejected" } });
+  });
+
+  it("accepts the exact configured public deployment host", async () => {
+    const publicService = await startNodeService({
+      public_base_url: "https://api.delivercheck.example",
+      allowed_hostnames: ["api.delivercheck.example"],
+    });
+    try {
+      const address = publicService.server.address();
+      if (address === null || typeof address === "string") {
+        throw new Error("Expected a TCP server address");
+      }
+      const localOrigin = `http://127.0.0.1:${address.port}`;
+      const accepted = await rawHostRequest(
+        localOrigin,
+        "api.delivercheck.example",
+      );
+      const rejected = await rawHostRequest(
+        localOrigin,
+        "api.delivercheck.example:444",
+      );
+      expect(accepted.status).toBe(200);
+      expect(rejected.status).toBe(403);
+    } finally {
+      await publicService.close();
+    }
   });
 
   it("rejects unsupported methods and query parameters", async () => {

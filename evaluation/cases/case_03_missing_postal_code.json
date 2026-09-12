@@ -1,0 +1,25 @@
+{
+  "case_id": "eval-case-03",
+  "name": "Missing postal code fact",
+  "request": {
+    "request_id": "req-eval-03",
+    "input_format": "json",
+    "source_text": "{\"recipient\":\"Bob\",\"city\":\"Doha\"}",
+    "target_schema": {
+      "type": "object",
+      "required": ["recipient", "city", "postal_code"],
+      "properties": {
+        "recipient": { "type": "string" },
+        "city": { "type": "string" },
+        "postal_code": { "type": "string" }
+      }
+    },
+    "explicit_rules": [
+      "city must be a valid municipality name."
+    ]
+  },
+  "expected_outcome": {
+    "status": "needs_information",
+    "unresolved_code": "missing_fact"
+  }
+}

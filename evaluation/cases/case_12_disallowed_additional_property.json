@@ -1,0 +1,27 @@
+{
+  "case_id": "eval-case-12",
+  "name": "Additional property disallowed by schema",
+  "request": {
+    "request_id": "req-eval-12",
+    "input_format": "json",
+    "source_text": "{\"id\":\"item-1\"}",
+    "target_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id"],
+      "properties": {
+        "id": { "type": "string" }
+      }
+    },
+    "explicit_rules": ["id must be item-1."]
+  },
+  "candidate": {
+    "id": "item-1",
+    "extra_forbidden": "unwanted"
+  },
+  "expected_outcome": {
+    "valid": false,
+    "status": "cannot_repair",
+    "unresolved_code": "schema_violation"
+  }
+}

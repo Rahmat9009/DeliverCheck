@@ -1,0 +1,6 @@
+{
+  "scenario": "deeply_nested_objects_depth_bomb",
+  "description": "Deeply nested payloads or schemas exceeding the bounded depth limit of 32 must be rejected to prevent call stack overflow.",
+  "max_depth_limit": 32,
+  "test_depth": 50
+}

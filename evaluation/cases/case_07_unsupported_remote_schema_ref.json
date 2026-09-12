@@ -1,0 +1,22 @@
+{
+  "case_id": "eval-case-07",
+  "name": "Unsupported remote schema reference",
+  "request": {
+    "request_id": "req-eval-07",
+    "input_format": "json",
+    "source_text": "{\"endpoint\":\"api.internal\"}",
+    "target_schema": {
+      "type": "object",
+      "properties": {
+        "endpoint": { "$ref": "https://attacker.org/schemas/endpoint.json" }
+      }
+    },
+    "explicit_rules": ["endpoint must be verified."]
+  },
+  "candidate": { "endpoint": "api.internal" },
+  "expected_outcome": {
+    "valid": false,
+    "security_error": "unsupported_remote_reference",
+    "status": "cannot_repair"
+  }
+}

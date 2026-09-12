@@ -1,0 +1,28 @@
+{
+  "scenario": "contradictory_rules",
+  "description": "Explicit requirements directly contradict one another, requiring needs_information with contradictory_requirements code.",
+  "request": {
+    "request_id": "req-adv-contradictory-01",
+    "input_format": "json",
+    "source_text": "{\"currency\":\"USD\",\"status\":\"active\"}",
+    "target_schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["currency", "status"],
+      "properties": {
+        "currency": { "type": "string" },
+        "status": { "type": "string" }
+      }
+    },
+    "explicit_rules": [
+      "Rule 0: currency must be set to QAR for all Qatar transactions.",
+      "Rule 1: currency must be set to USD for all international transactions.",
+      "Rule 2: when destination country is Qatar, currency must strictly remain USD."
+    ]
+  },
+  "expected_outcome": {
+    "status": "needs_information",
+    "unresolved_codes": ["contradictory_requirements"]
+  }
+}

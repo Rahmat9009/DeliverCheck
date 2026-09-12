@@ -1,0 +1,28 @@
+{
+  "scenario": "missing_mandatory_facts",
+  "description": "Target schema requires customer_tax_id and delivery_country, but neither is present in source_text nor deducible from explicit rules. Repair must not hallucinate/invent facts.",
+  "request": {
+    "request_id": "req-adv-missing-facts-01",
+    "input_format": "json",
+    "source_text": "{\"customer_name\":\"Acme Corp\",\"amount\":\"1200.00\"}",
+    "target_schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["customer_name", "amount", "customer_tax_id", "delivery_country"],
+      "properties": {
+        "customer_name": { "type": "string" },
+        "amount": { "type": "string" },
+        "customer_tax_id": { "type": "string" },
+        "delivery_country": { "type": "string", "pattern": "^[A-Z]{2}$" }
+      }
+    },
+    "explicit_rules": [
+      "amount is a decimal string."
+    ]
+  },
+  "expected_outcome": {
+    "status": "needs_information",
+    "unresolved_codes": ["missing_fact"]
+  }
+}

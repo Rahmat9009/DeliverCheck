@@ -1,0 +1,43 @@
+{
+  "scenario": "undeclared_changes_detection",
+  "description": "Candidate introduces an unauthorized edit to price and added an extra field, while declared changes only account for invoice_id.",
+  "request": {
+    "request_id": "req-adv-undeclared-01",
+    "input_format": "json",
+    "source_text": "{\"invoice_id\":123,\"price\":\"100.00\",\"discount\":\"0.00\"}",
+    "target_schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "required": ["invoice_id", "price", "discount"],
+      "properties": {
+        "invoice_id": { "type": "string", "pattern": "^[0-9]{6}$" },
+        "price": { "type": "string" },
+        "discount": { "type": "string" },
+        "free_shipping": { "type": "boolean" }
+      }
+    },
+    "explicit_rules": [
+      "invoice_id must be 6 digits zero-padded string."
+    ]
+  },
+  "candidate": {
+    "invoice_id": "000123",
+    "price": "50.00",
+    "discount": "0.00",
+    "free_shipping": true
+  },
+  "declared_changes": [
+    {
+      "path": "/invoice_id",
+      "operation": "replace",
+      "before": 123,
+      "after": "000123",
+      "justification": "Preserved 6-digit invoice identifier.",
+      "rule_indexes": [0]
+    }
+  ],
+  "expected_undeclared_paths": [
+    "/price",
+    "/free_shipping"
+  ]
+}

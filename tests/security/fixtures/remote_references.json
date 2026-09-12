@@ -1,0 +1,42 @@
+{
+  "scenario": "unsupported_remote_schema_references",
+  "description": "Schemas containing remote $ref URIs must be rejected to prevent SSRF and network dependency issues.",
+  "adversarial_schemas": [
+    {
+      "name": "external_https_ref",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "user": {
+            "$ref": "https://evil-attacker.example.com/schemas/user.json"
+          }
+        }
+      },
+      "expected_error": "unsupported_remote_reference"
+    },
+    {
+      "name": "internal_metadata_service_ref",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "secret": {
+            "$ref": "http://169.254.169.254/latest/meta-data/iam/security-credentials/"
+          }
+        }
+      },
+      "expected_error": "unsupported_remote_reference"
+    },
+    {
+      "name": "protocol_relative_ref",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "info": {
+            "$ref": "//remote.domain.org/schema.json"
+          }
+        }
+      },
+      "expected_error": "unsupported_remote_reference"
+    }
+  ]
+}

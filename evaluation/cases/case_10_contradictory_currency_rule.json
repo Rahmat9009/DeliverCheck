@@ -1,0 +1,22 @@
+{
+  "case_id": "eval-case-10",
+  "name": "Contradictory currency requirements",
+  "request": {
+    "request_id": "req-eval-10",
+    "input_format": "json",
+    "source_text": "{\"currency\":\"EUR\"}",
+    "target_schema": {
+      "type": "object",
+      "required": ["currency"],
+      "properties": { "currency": { "type": "string" } }
+    },
+    "explicit_rules": [
+      "Rule 0: currency must be formatted as EUR.",
+      "Rule 1: currency must be formatted as JPY."
+    ]
+  },
+  "expected_outcome": {
+    "status": "needs_information",
+    "unresolved_code": "contradictory_requirements"
+  }
+}

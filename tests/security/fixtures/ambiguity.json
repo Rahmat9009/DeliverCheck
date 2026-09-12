@@ -1,0 +1,51 @@
+{
+  "scenario": "ambiguous_date_and_currency",
+  "description": "Source contains ambiguous date 03/04/2026 and ambiguous currency symbol $ without timezone or country specifications.",
+  "request": {
+    "request_id": "req-adv-ambiguity-01",
+    "input_format": "json",
+    "source_text": "{\"delivery_date\":\"03/04/2026\",\"price\":\"$100.00\"}",
+    "target_schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["delivery_date", "currency", "amount"],
+      "properties": {
+        "delivery_date": { "type": "string", "format": "date" },
+        "currency": { "enum": ["USD", "CAD", "AUD", "NZD"] },
+        "amount": { "type": "string", "pattern": "^[0-9]+\\.[0-9]{2}$" }
+      }
+    },
+    "explicit_rules": [
+      "delivery_date must be formatted as ISO-8601 YYYY-MM-DD.",
+      "currency must be ISO-4217 code.",
+      "amount must be a decimal string."
+    ]
+  },
+  "candidate": {
+    "delivery_date": "2026-04-03",
+    "currency": "USD",
+    "amount": "100.00"
+  },
+  "declared_changes": [
+    {
+      "path": "/delivery_date",
+      "operation": "replace",
+      "before": "03/04/2026",
+      "after": "2026-04-03",
+      "justification": "Assumed DD/MM/YYYY order without explicit rule.",
+      "rule_indexes": [0]
+    },
+    {
+      "path": "/currency",
+      "operation": "add",
+      "after": "USD",
+      "justification": "Assumed $ is USD.",
+      "rule_indexes": [1]
+    }
+  ],
+  "expected_outcome": {
+    "status": "needs_information",
+    "unresolved_codes": ["ambiguous_date", "ambiguous_currency"]
+  }
+}

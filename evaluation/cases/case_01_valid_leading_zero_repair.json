@@ -1,0 +1,41 @@
+{
+  "case_id": "eval-case-01",
+  "name": "Valid invoice leading zero repair",
+  "request": {
+    "request_id": "req-eval-01",
+    "input_format": "json",
+    "source_text": "{\"invoice_num\":42,\"total\":\"105.50\"}",
+    "target_schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["invoice_num", "total"],
+      "properties": {
+        "invoice_num": { "type": "string", "pattern": "^[0-9]{6}$" },
+        "total": { "type": "string", "pattern": "^[0-9]+\\.[0-9]{2}$" }
+      }
+    },
+    "explicit_rules": [
+      "invoice_num must be a 6-digit string preserving leading zeros."
+    ]
+  },
+  "candidate": {
+    "invoice_num": "000042",
+    "total": "105.50"
+  },
+  "declared_changes": [
+    {
+      "path": "/invoice_num",
+      "operation": "replace",
+      "before": 42,
+      "after": "000042",
+      "justification": "Formatted invoice_num as 6-digit zero-padded string per rule 0.",
+      "rule_indexes": [0]
+    }
+  ],
+  "expected_outcome": {
+    "status": "passed_checks",
+    "valid": true,
+    "unresolved_count": 0
+  }
+}

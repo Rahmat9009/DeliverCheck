@@ -1,0 +1,23 @@
+{
+  "case_id": "eval-case-05",
+  "name": "Forged candidate hash",
+  "request": {
+    "request_id": "req-eval-05",
+    "input_format": "json",
+    "source_text": "{\"code\":\"ABC\"}",
+    "target_schema": {
+      "type": "object",
+      "required": ["code"],
+      "properties": {
+        "code": { "type": "string" }
+      }
+    },
+    "explicit_rules": ["code is a string."]
+  },
+  "candidate": { "code": "ABC" },
+  "declared_candidate_hash": "sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+  "expected_outcome": {
+    "valid": false,
+    "failed_check": "candidate_hash_verification"
+  }
+}

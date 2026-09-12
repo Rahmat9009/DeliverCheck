@@ -1,0 +1,23 @@
+{
+  "case_id": "eval-case-06",
+  "name": "Prototype pollution payload attack",
+  "request": {
+    "request_id": "req-eval-06",
+    "input_format": "json",
+    "source_text": "{\"user\":\"alice\"}",
+    "target_schema": {
+      "type": "object",
+      "required": ["user"],
+      "properties": { "user": { "type": "string" } }
+    },
+    "explicit_rules": ["user must be string."]
+  },
+  "candidate": {
+    "user": "alice",
+    "__proto__": { "isAdmin": true }
+  },
+  "expected_outcome": {
+    "valid": false,
+    "security_error": "prototype_pollution_key"
+  }
+}

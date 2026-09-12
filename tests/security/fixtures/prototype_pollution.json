@@ -1,0 +1,40 @@
+{
+  "scenario": "prototype_pollution_attack",
+  "description": "Payloads and schemas containing __proto__, constructor, or prototype keys must be rejected before processing.",
+  "adversarial_cases": [
+    {
+      "name": "candidate_with_proto_key",
+      "candidate": {
+        "invoice_id": "000123",
+        "__proto__": { "polluted": true }
+      },
+      "expected_error": "prototype_pollution_key"
+    },
+    {
+      "name": "candidate_with_constructor_key",
+      "candidate": {
+        "invoice_id": "000123",
+        "constructor": { "prototype": { "isAdmin": true } }
+      },
+      "expected_error": "prototype_pollution_key"
+    },
+    {
+      "name": "candidate_with_prototype_key",
+      "candidate": {
+        "invoice_id": "000123",
+        "prototype": { "status": "approved" }
+      },
+      "expected_error": "prototype_pollution_key"
+    },
+    {
+      "name": "schema_with_proto_key",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "__proto__": { "type": "string" }
+        }
+      },
+      "expected_error": "prototype_pollution_key"
+    }
+  ]
+}

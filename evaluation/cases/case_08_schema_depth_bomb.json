@@ -1,0 +1,11 @@
+{
+  "case_id": "eval-case-08",
+  "name": "Nesting depth limit enforcement",
+  "depth_bomb": true,
+  "depth": 45,
+  "expected_outcome": {
+    "valid": false,
+    "security_error": "depth_limit_exceeded",
+    "status": "cannot_repair"
+  }
+}

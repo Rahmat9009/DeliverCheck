@@ -1,0 +1,41 @@
+{
+  "case_id": "eval-case-04",
+  "name": "Undeclared discount tampering",
+  "request": {
+    "request_id": "req-eval-04",
+    "input_format": "json",
+    "source_text": "{\"item\":\"Widget\",\"price\":\"50.00\",\"discount\":\"0.00\"}",
+    "target_schema": {
+      "type": "object",
+      "required": ["item", "price", "discount"],
+      "properties": {
+        "item": { "type": "string" },
+        "price": { "type": "string" },
+        "discount": { "type": "string" }
+      }
+    },
+    "explicit_rules": [
+      "item name must be capitalized."
+    ]
+  },
+  "candidate": {
+    "item": "WIDGET",
+    "price": "50.00",
+    "discount": "20.00"
+  },
+  "declared_changes": [
+    {
+      "path": "/item",
+      "operation": "replace",
+      "before": "Widget",
+      "after": "WIDGET",
+      "justification": "Capitalized item name per rule 0.",
+      "rule_indexes": [0]
+    }
+  ],
+  "expected_outcome": {
+    "status": "cannot_repair",
+    "valid": false,
+    "has_undeclared_changes": true
+  }
+}

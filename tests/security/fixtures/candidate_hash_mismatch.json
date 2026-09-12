@@ -1,0 +1,26 @@
+{
+  "scenario": "candidate_hash_mismatch",
+  "description": "Result declares candidate_hash that differs from RFC 8785 canonical hash of the candidate object.",
+  "request": {
+    "request_id": "req-adv-hash-mismatch-01",
+    "input_format": "json",
+    "source_text": "{\"id\":\"A-100\",\"status\":\"ok\"}",
+    "target_schema": {
+      "type": "object",
+      "required": ["id", "status"],
+      "properties": {
+        "id": { "type": "string" },
+        "status": { "type": "string" }
+      }
+    },
+    "explicit_rules": [
+      "status must be ok."
+    ]
+  },
+  "candidate": {
+    "id": "A-100",
+    "status": "ok"
+  },
+  "declared_candidate_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+  "expected_verification_failure": "candidate_hash_verification"
+}

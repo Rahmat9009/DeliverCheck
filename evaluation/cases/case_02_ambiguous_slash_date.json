@@ -1,0 +1,24 @@
+{
+  "case_id": "eval-case-02",
+  "name": "Ambiguous slash date format",
+  "request": {
+    "request_id": "req-eval-02",
+    "input_format": "json",
+    "source_text": "{\"shipment_id\":\"S-1\",\"dispatch_date\":\"05/06/2026\"}",
+    "target_schema": {
+      "type": "object",
+      "required": ["shipment_id", "dispatch_date"],
+      "properties": {
+        "shipment_id": { "type": "string" },
+        "dispatch_date": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" }
+      }
+    },
+    "explicit_rules": [
+      "dispatch_date must be formatted as ISO YYYY-MM-DD."
+    ]
+  },
+  "expected_outcome": {
+    "status": "needs_information",
+    "unresolved_code": "ambiguous_date"
+  }
+}

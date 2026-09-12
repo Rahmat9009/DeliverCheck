@@ -1,0 +1,40 @@
+{
+  "scenario": "leading_zeros_preservation",
+  "description": "Identifier 000123 has meaningful leading zeros. If coerced to number 123 or converted to 3-digit string '123', schema validation or rule checks must fail.",
+  "request": {
+    "request_id": "req-adv-leading-zeros-01",
+    "input_format": "json",
+    "source_text": "{\"account_id\":123,\"balance\":\"450.00\"}",
+    "target_schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["account_id", "balance"],
+      "properties": {
+        "account_id": { "type": "string", "pattern": "^[0-9]{6}$" },
+        "balance": { "type": "string", "pattern": "^[0-9]+\\.[0-9]{2}$" }
+      }
+    },
+    "explicit_rules": [
+      "account_id is a 6-digit zero-padded string and leading zeros must be preserved.",
+      "balance is a decimal string."
+    ]
+  },
+  "adversarial_candidates": [
+    {
+      "description": "Candidate incorrectly supplies number instead of string",
+      "candidate": { "account_id": 123, "balance": "450.00" },
+      "expected_valid": false
+    },
+    {
+      "description": "Candidate incorrectly supplies unpadded string '123'",
+      "candidate": { "account_id": "123", "balance": "450.00" },
+      "expected_valid": false
+    },
+    {
+      "description": "Correct candidate preserving leading zeros",
+      "candidate": { "account_id": "000123", "balance": "450.00" },
+      "expected_valid": true
+    }
+  ]
+}

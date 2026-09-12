@@ -1,0 +1,19 @@
+{
+  "case_id": "eval-case-11",
+  "name": "Invalid JSON source text",
+  "request": {
+    "request_id": "req-eval-11",
+    "input_format": "json",
+    "source_text": "{\"unclosed_string: 123",
+    "target_schema": {
+      "type": "object",
+      "properties": { "id": { "type": "number" } }
+    },
+    "explicit_rules": ["id must be number."]
+  },
+  "expected_outcome": {
+    "valid": false,
+    "status": "cannot_repair",
+    "unresolved_code": "invalid_source_json"
+  }
+}

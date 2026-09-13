@@ -7,7 +7,7 @@ import { SimulationRankingAdapter } from "../../src/arena/rounds.js";
 import { SimulationMarketplace } from "../../src/arena/simulation.js";
 import { SharedNetCliAdapter, SimulatedSharedNetAdapter, type ArgumentExecutor } from "../../src/arena/sharednet.js";
 import { ArenaStateController } from "../../src/arena/state.js";
-import type { ArenaConfig } from "../../src/arena/types.js";
+import type { ArenaConfig, SharedNetAdapter } from "../../src/arena/types.js";
 import { ARENA_ROOM, SELLER_INSTANCE, SELLER_PRINCIPAL, requestMessage, validLiveConfig } from "./fixtures.js";
 
 async function options(sharednet = new SimulatedSharedNetAdapter()) {
@@ -57,6 +57,32 @@ describe("Arena operator guards", () => {
     const live = validLiveConfig();
     const operator = new ArenaOperator({ ...base, config: live });
     await expect(operator.preflight()).rejects.toThrow(/live SharedNet adapter/);
+    expect(operator.phase).toBe("preflight");
+  });
+
+  it("rejects an actual CLI/server version mismatch during live preflight", async () => {
+    const config = validLiveConfig();
+    const simulated = new SimulatedSharedNetAdapter();
+    Object.defineProperty(simulated, "mode", { value: "live" });
+    const sharednet = simulated as unknown as SharedNetAdapter;
+    sharednet.identity = async () => ({ room_id: config.arena_room_id, instance_id: config.arena_instance_id, principal_id: config.account_principal_id });
+    sharednet.protocolStatus = async () => ({ cli_version: "0.1.8", server_protocol_version: "2.0.0" });
+    const marketplace = new SimulationMarketplace();
+    Object.defineProperty(marketplace, "adapter_id", { value: config.marketplace.adapter });
+    Object.defineProperty(marketplace, "protocol_version", { value: config.marketplace.protocol_version });
+    const ranking = new SimulationRankingAdapter();
+    Object.defineProperty(ranking, "method", { value: config.ranking_method.adapter });
+    const operator = new ArenaOperator({
+      config,
+      state: await ArenaStateController.open(new MemoryActionLedger()),
+      sharednet,
+      delivercheck: new SimulatedDeliverCheckClient(() => ({})),
+      marketplace,
+      ranking,
+      seller_policy: { room_id: config.arena_room_id, seller_principal_id: config.account_principal_id, payment_recipient: config.seller_payment_recipient, require_room_binding: true },
+      round_two_policy: { minimum_spend: 80, maximum_spend: 100, minimum_sellers: 3, room_id: config.arena_room_id, bind_payments_to_room: true, self_ids: new Set(config.self_identities.map((identity) => identity.id)) },
+    });
+    await expect(operator.preflight()).rejects.toThrow(/protocol version/);
     expect(operator.phase).toBe("preflight");
   });
 });

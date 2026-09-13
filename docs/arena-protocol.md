@@ -199,3 +199,15 @@ The following facts are required before a live unattended operator can be enable
 9. The missing sixth submission-validity condition.
 
 Until those are organizer-confirmed, the transport and credit primitives are usable, but the full Arena protocol is not.
+
+## Checkpoint 6B3 compatibility assumptions
+
+The operator pins the confirmed CLI package at `sharednet@0.1.8` and verifies two runtime values during live preflight: the selected session's reported CLI version and the official discovery document's `protocol_version`. A configured nonempty profile label is not accepted as version proof. The live adapter chooses `npx` on Linux and `npx.cmd` on native Windows.
+
+The unattended loop uses bounded `read --after` pagination followed by `wait`, while retaining its own application cursor. This avoids delegating exactly-once behavior to the CLI's `watch` cursor and lets pending orders be reconsidered without message replay. `watch` remains an official command but is not required by this implementation.
+
+Ledger reconciliation uses the documented `--before <transfer_id>` cursor. Incoming order searches continue to the order timestamp boundary so duplicate valid transfers can be recorded. Exact transfer-ID searches stop as soon as the target is found. All searches also stop at an explicit page limit and fail safely when evidence lies beyond it.
+
+No official marketplace, product invocation, purchase-request, canonical seller mapping, or ranking convention has become available since the preflight above. The new live entrypoint therefore requires a repository-local integration module and exact organizer-confirmed adapter identifiers; it does not provide a guessed Room-message grammar. Missing integration configuration prevents startup before any SharedNet mutation.
+
+For implementation purposes, Principal is the required canonical seller key. This is a fail-closed configuration rule based on the confirmed credit-owner semantics, not evidence that the organizer has chosen a seller identity convention. An Agent or Instance listing remains unusable for payment until the organizer confirms its Principal mapping and exact addressed recipient.

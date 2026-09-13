@@ -9,12 +9,14 @@
   },
   "scripts": {
     "arena:simulate": "node --import tsx scripts/arena-simulation.ts",
+    "arena:live": "node --import tsx scripts/arena-live.ts",
     "build": "tsc",
     "demo:core": "node --import tsx scripts/demo-core.ts",
     "sharedos:proof": "node --import tsx scripts/sharedos-proof.ts",
     "smoke:service": "node --import tsx scripts/smoke-service.ts",
     "start": "node dist/src/service/start.js",
     "test:deploy": "vitest run tests/deploy",
+    "test:arena": "vitest run tests/arena",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },

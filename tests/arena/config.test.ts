@@ -28,4 +28,13 @@ describe("Arena live preflight", () => {
   it("accepts a complete explicit organizer-confirmed profile", () => {
     expect(validateLiveConfig(validLiveConfig()).mode).toBe("live");
   });
+
+  it("requires validated protocol, marketplace, purchase, ranking, and canonical identity conventions", () => {
+    const config = validLiveConfig();
+    config.cli_version = "0.1.7" as "0.1.8";
+    config.marketplace.organizer_confirmed = false as true;
+    config.purchase_convention.exact_price = false as true;
+    config.canonical_identity.mappings_verified = false as true;
+    expect(() => validateLiveConfig(config)).toThrow(/cli_version|marketplace|purchase|canonical/);
+  });
 });

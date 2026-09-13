@@ -24,7 +24,7 @@ describe("Arena rounds", () => {
   it("completes both deterministic rounds with no real SharedNet side effects", async () => {
     const dir = await mkdtemp(join(tmpdir(), "arena-simulation-test-"));
     const result = await runArenaSimulation(join(dir, "activity.jsonl"));
-    expect(result).toMatchObject({ label: "SIMULATION", paid_repair_delivered: true, evaluated_products: 3, spent_credits: 80, purchased_sellers: 3, marketplace_calls: 6, real_sharednet_side_effects: 0, final_phase: "completed" });
+    expect(result).toMatchObject({ label: "SIMULATION", paid_repair_delivered: true, paid_repair_delivered_once: true, pending_delivery_reconciled: true, evaluated_products: 3, spent_credits: 80, purchased_sellers: 3, marketplace_calls: 7, malformed_products_isolated: true, delivercheck_self_evaluated: false, critique_restart_succeeded: true, market_restart_succeeded: true, ranking_submissions: 1, human_prompts: 0, real_sharednet_side_effects: 0, final_phase: "completed" });
     expect(result.disagreements).toHaveLength(3);
     expect(new Set(result.ranking)).toHaveLength(3);
   });

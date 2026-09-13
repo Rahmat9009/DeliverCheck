@@ -1,119 +1,146 @@
 # DeliverCheck Arena operator launch runbook
 
-This runbook covers the guarded operator added in Checkpoint 6B2. Simulation is available now. Live launch remains disabled until every Arena-specific value is organizer-confirmed.
+This runbook describes the Checkpoint 6B3 operator. It does not authorize a live run. The current organizer-only blockers at the end of this document must be resolved first.
 
-## Architecture
+## Components
 
-The implementation lives under `src/arena/`:
+- `sharednet.ts`: pinned `sharednet@0.1.8`, argument-array execution, Linux/Windows executable selection, cursor-aware simulation, and actual CLI/server version discovery.
+- `ledger.ts` and `state.ts`: fsynced hash-chained actions and resumable phases/substeps.
+- `orders.ts`: request persistence independent of the message cursor.
+- `pagination.ts`: bounded Room and `ledger --before` traversal.
+- `seller.ts`: delayed payment reconciliation, deterministic duplicate-payment handling, one delivery, and bounded DeliverCheck calls.
+- `rounds.ts`: per-listing isolation, canonical seller rules, evidence-backed critique, idempotent ranking, exact outgoing-transfer verification, and 80–100 credit planning.
+- `unattended.ts`: timestamp-driven single-writer event loop and bounded transient retry.
+- `lock.ts`: state-file process lock.
+- `live.ts` and `scripts/arena-live.ts`: guarded noninteractive live bootstrap.
+- `simulation.ts`: delayed effects, pagination, concurrent revenue, malformed products, aliases, failures, and restart recovery with no SharedNet access.
 
-- `config.ts` validates live configuration and preserves Principal, Agent, Instance, and node identity kinds.
-- `sharednet.ts` wraps `sharednet@0.1.8` with argument arrays and `shell: false`. Credentials remain inside the official CLI.
-- `ledger.ts` writes a mode-0600 JSON Lines action ledger with a SHA-256 hash chain and fsync after each append.
-- `state.ts` reconstructs phase, cursor, messages, orders, transfers, evaluations, rankings, and purchases from that ledger.
-- `messages.ts` recognizes the versioned structured request and the narrow `DeliverCheck diagnose:` or `DeliverCheck repair:` natural-language form.
-- `seller.ts` holds paid repair until an exact official ledger record matches the order, buyer, recipient, amount, Room, and time.
-- `rounds.ts` records three evidence-backed critiques, prepares a deterministic ranking through an injected adapter, and plans 80–100 credits across at least three sellers.
-- `operator.ts` enforces `preflight → waiting → critique → market → completed`, with fail-closed transition to `halted`.
-- `simulation.ts` supplies deterministic messages, identities, transfers, products, requests, restart, and responses without reaching SharedNet.
+The production service remains `https://delivercheck.vercel.app`; this branch does not deploy or change it.
 
-DeliverCheck service calls use the production REST adapter at `https://delivercheck.vercel.app`. The operator does not alter or deploy that service. The simulation uses an injected fake service client.
+## Verify locally
 
-## Verify the build
-
-From the repository root:
+Use the metadata form present in this checkout. For this repository:
 
 ```bash
 git --git-dir=.git-local --work-tree=. merge-base --is-ancestor \
   b09b30eda9c1c450e0490600da4372554d1894c1 HEAD
 npm run typecheck
-npm test
 npm run build
-npm run sharedos:proof
-npm run smoke:service
+npm test
+npx vitest run tests/arena
 npm run arena:simulate
+npm run sharedos:proof
+npm run demo:core
+npm run smoke:service
 npm audit
 git --git-dir=.git-local --work-tree=. diff --check
 ```
 
-`npm run arena:simulate` must report `SIMULATION`, three evaluated products, three disagreements, a ranking, 80 spent simulated credits, three purchased sellers, a ledger-verified paid repair, `completed`, and zero real SharedNet side effects.
+The live repository check automatically uses `.git-local` when present and ordinary `.git` otherwise.
 
-## Live configuration gate
+The simulation must report three evaluated canonical sellers, one disagreement per product, one ranking submission, 80 credits paid to three sellers, delayed repair delivered exactly once, delivery reconciliation, more than one ledger page, concurrent income, critique/market restarts, malformed listing isolation, no self-evaluation, `completed`, and zero real SharedNet side effects.
 
-Do not place an invitation, API key, token, credential path, or credential content in configuration. The official CLI retains those values. The live profile contains only explicit public protocol values:
+## Public live profile
 
-```text
-mode = live
-explicit_live_enablement = true
-protocol_profile_version
-arena_room_id                      # rom_... and organizer confirmed
-arena_instance_id                  # i_... for this Arena seat
-account_principal_id               # p_... purse owner
-submission_identity.kind           # principal | agent | instance | node
-submission_identity.id
-submission_identity.organizer_confirmed = true
-seller_payment_recipient.kind      # principal | agent | instance
-seller_payment_recipient.id
-seller_payment_recipient.organizer_confirmed = true
-ranking_method.adapter
-ranking_method.organizer_confirmed = true
-round_timing.arena_starts_at        # absolute timestamp with offset
-round_timing.round_1_ends_at
-round_timing.round_2_starts_at
-round_timing.round_2_ends_at
-round_timing.timezone
-delivercheck_origin = https://delivercheck.vercel.app
-payment_room_binding
+Do not put invites, tokens, API keys, stored credential paths, or credential values in this file. The maximum profile size is 64 KiB. Required fields are:
+
+```json
+{
+  "mode": "live",
+  "explicit_live_enablement": true,
+  "protocol_profile_version": "ORGANIZER_CONFIRMED",
+  "cli_version": "0.1.8",
+  "server_protocol_version": "1.0.0",
+  "arena_room_id": "rom_...",
+  "arena_instance_id": "i_...",
+  "account_principal_id": "p_...",
+  "submission_identity": { "kind": "instance", "id": "i_...", "organizer_confirmed": true },
+  "seller_payment_recipient": { "kind": "instance", "id": "i_...", "organizer_confirmed": true },
+  "seller_payment_principal_id": "p_...",
+  "self_identities": [
+    { "kind": "principal", "id": "p_...", "organizer_confirmed": true },
+    { "kind": "instance", "id": "i_...", "organizer_confirmed": true }
+  ],
+  "marketplace": { "adapter": "CONFIRMED", "protocol_version": "CONFIRMED", "organizer_confirmed": true },
+  "purchase_convention": { "adapter": "CONFIRMED", "memo_prefix": "CONFIRMED", "canonical_recipient": "principal", "exact_price": true, "organizer_confirmed": true },
+  "ranking_method": { "adapter": "CONFIRMED_IDEMPOTENT", "organizer_confirmed": true },
+  "canonical_identity": { "seller_key": "principal", "mappings_verified": true, "organizer_confirmed": true },
+  "round_timing": {
+    "arena_starts_at": "ABSOLUTE_TIMESTAMP_WITH_OFFSET",
+    "round_1_ends_at": "ABSOLUTE_TIMESTAMP_WITH_OFFSET",
+    "round_2_starts_at": "ABSOLUTE_TIMESTAMP_WITH_OFFSET",
+    "round_2_ends_at": "ABSOLUTE_TIMESTAMP_WITH_OFFSET",
+    "timezone": "IANA_TIMEZONE"
+  },
+  "delivercheck_origin": "https://delivercheck.vercel.app",
+  "payment_room_binding": true,
+  "timeouts": {
+    "sharednet_read_ms": 30000,
+    "ledger_ms": 30000,
+    "marketplace_ms": 30000,
+    "product_invocation_ms": 60000,
+    "delivercheck_ms": 240000
+  }
+}
 ```
 
-The seller policy must exactly match the profile. Round 2 self-payment protection must contain the account Principal, Arena Instance, and seller recipient as distinct IDs. Preflight also calls the CLI's safe `whoami` operation and requires the selected Room, Instance, and Principal to equal the profile.
+Every self Principal, Agent, Instance, seat, submission, and recipient ID must appear in `self_identities`. The seller recipient must map to `account_principal_id`. Every third-party non-Principal listing must carry its own verified canonical Principal and recipient mapping.
 
-The configurable product-discovery and ranking adapters must be based on organizer-confirmed protocol. `decision approve/deny` is not a ranking adapter. Do not implement a room-message convention merely because another participant uses it.
+## Organizer integration module
 
-## Shadow launch
+Because SharedNet 0.1.8 publishes no Arena marketplace or ranking protocol, the runner does not invent one. After organizer confirmation, implement a reviewed module inside this repository that exports:
 
-After configuration and the missing adapters exist, perform a read-only shadow launch:
+```ts
+export function createArenaIntegrations(config: LiveArenaConfig): {
+  marketplace: ProductMarketplace;
+  ranking: RankingAdapter;
+};
+```
 
-1. Validate the complete live profile without constructing any mutating request.
-2. Confirm the CLI and server protocol versions.
-3. Confirm `whoami` returns the configured Room, Instance, and Principal.
-4. Open and validate the action-ledger hash chain.
-5. Read from the recovered durable cursor and verify message parsing without sending replies.
-6. Read balance and ledger, then test payment matching against historical fixtures only.
-7. Discover at least three products through the confirmed catalogue without invoking or paying.
-8. Prepare a ranking locally without submitting it.
-9. Produce a dry purchase plan totaling 80–100 credits across at least three non-self sellers.
+Its `marketplace.adapter_id`, `marketplace.protocol_version`, and idempotent `ranking.method` must exactly match the profile. The loader rejects paths outside the repository.
 
-Any identity mismatch, unsupported protocol version, malformed catalogue item, unavailable adapter, unknown prior side effect, ledger corruption, budget failure, or deadline failure stops at `halted`.
+## Read-only shadow check
 
-## Live operation sequence
+Before enabling live mode:
 
-Enable this sequence only after the shadow launch passes and the organizer's start time arrives:
+1. Validate the profile and integration module with fixture adapters.
+2. Confirm actual CLI `0.1.8` and server protocol `1.0.0` through the implemented status/discovery checks.
+3. Confirm `whoami` matches the configured Room, Instance, and Principal.
+4. Verify the ledger hash chain, state lock, and pending-order directory permissions.
+5. Reconcile the durable Room cursor using read-only pages.
+6. Read balance and ledger without paying.
+7. Validate each catalogue item independently and build a dry 80–100 credit plan.
+8. Prepare but do not submit the ranking.
 
-1. Call operator preflight once.
-2. Publish the bounded DeliverCheck presentation once. A pending presentation intent is never blindly resent after an unknown outcome.
-3. Keep one monitor in the fixed Arena working directory. It reads after the durable application cursor before waiting, so a CLI-cursor advance cannot lose a message after a crash.
-4. For free diagnoses, invoke DeliverCheck and reply with the order-linked bounded result.
-5. For repairs, announce the unique order and wait. Invoke repair only after the seller's official SharedNet ledger contains the exact 7-credit incoming transfer. Never trust a receipt message.
-6. At Round 1 start, execute at least three distinct products, store output hashes and measured latency, and produce one concrete disagreement for each. Submit the ranking only through the configured idempotent ranking adapter.
-7. At Round 2 start, read the official balance and plan the smallest deterministic combination totaling 80–100 credits across at least three sellers. Check availability before paying. Append and fsync each intent, reconcile the ledger, pay once, verify the official transfer and balance delta, then invoke the purchased useful service.
-8. Stop before each configured deadline margin. Complete only after all round invariants pass.
+Do not use a SharedNet membership decision as a ranking method.
 
-When a send outcome is unknown and the exact content cannot be found in a complete Room read, the operator halts instead of risking a duplicate. When a payment outcome is unknown, it reconciles the official ledger by its unique memo before considering another transfer.
+## Launch command
 
-## Recovery
+Only after the organizer profile, integration module, shadow check, and authorization are complete:
 
-Restart with the same fixed working directory and the same ledger path. Never edit the JSON Lines ledger. Startup validates every sequence, previous hash, and event hash. The recovered state prevents duplicate messages, deliveries, transfer consumption, product evaluations, ranking submissions, and purchases.
+```bash
+DELIVERCHECK_ARENA_LIVE=enabled \
+DELIVERCHECK_ARENA_CONFIG=../delivercheck-arena-profile.json \
+DELIVERCHECK_ARENA_INTEGRATION=./src/arena/integrations/confirmed-arena.ts \
+DELIVERCHECK_ARENA_STATE=.arena-state/activity.jsonl \
+npm run arena:live
+```
 
-If the final ledger line is incomplete or the hash chain fails, preserve the file and halt. Do not truncate, repair, or replace it during the competition.
+The profile is public protocol configuration despite the illustrative filename. Keep the active profile outside the repository so the required clean-worktree check remains meaningful. Omit `DELIVERCHECK_ARENA_STATE` to use `.arena-state/activity.jsonl`. `.arena-state/` is ignored.
 
-## Current live blockers
+The process has no prompt. It obtains the process lock, validates release ancestry and a clean worktree, validates protocol/identity/adapters, restores state, publishes once, waits for absolute timestamps, monitors throughout both rounds, and exits after completion or a clean signal.
 
-- Arena Room invitation and required Agent/seat rules
-- organizer-confirmed Devpost submission identity
-- organizer-confirmed seller recipient and payment-correlation convention
-- official product discovery and purchase grammar
-- official ranking submission adapter
-- absolute round timing and timezone
-- all submission-validity conditions
+Never launch two processes against one state path. Never delete a lock while its PID is running. Never edit the action ledger or pending-order files. An uncertain payment remains pending and is searched through paginated official ledger records; it is not blindly issued again.
 
-Until these are supplied, run only `npm run arena:simulate`.
+## Current organizer-only blockers
+
+- Arena Room invitation, join time, and Agent/seat rules
+- Devpost submission identity
+- seller recipient, Principal mapping, memo, exact-price, and Room-binding convention
+- product catalogue, invocation, purchase-request, and delivery protocols
+- canonical seller mapping source
+- idempotent ranking submission method
+- absolute round timestamps and timezone
+- complete submission-validity conditions, including the missing sixth condition
+
+Until all are confirmed, use only `npm run arena:simulate`. Running `npm run arena:live` without both the explicit switch and complete profile fails before creating SharedNet effects.

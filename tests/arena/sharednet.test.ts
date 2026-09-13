@@ -74,6 +74,15 @@ describe("typed SharedNet adapters", () => {
     expect(executor.calls).toHaveLength(0);
   });
 
+  it("reads the actual CLI and server protocol versions", async () => {
+    const executor = new RecordingExecutor();
+    executor.response = { instance: { cli_version: "0.1.8" } };
+    const fetcher = async () => new Response(JSON.stringify({ protocol_version: "1.0.0" }), { status: 200, headers: { "content-type": "application/json" } });
+    const adapter = new SharedNetCliAdapter(validLiveConfig(), executor, 30_000, fetcher as typeof fetch);
+    await expect(adapter.protocolStatus()).resolves.toEqual({ cli_version: "0.1.8", server_protocol_version: "1.0.0" });
+    expect(executor.calls[0]?.args).toEqual(["-y", "sharednet@0.1.8", "session", "status", "--session", "i_LIVEINST01", "--json"]);
+  });
+
   it("keeps simulated mutations in memory with zero real side effects", async () => {
     const adapter = new SimulatedSharedNetAdapter();
     await adapter.say("simulation");

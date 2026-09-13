@@ -35,18 +35,40 @@ export interface LiveArenaConfig {
   mode: "live";
   explicit_live_enablement: true;
   protocol_profile_version: string;
+  cli_version: "0.1.8";
+  server_protocol_version: "1.0.0";
   arena_room_id: string;
   arena_instance_id: string;
   account_principal_id: string;
   submission_identity: ConfirmedIdentity;
   seller_payment_recipient: ConfirmedIdentity<PaymentIdentityKind>;
+  seller_payment_principal_id: string;
+  self_identities: ConfirmedIdentity[];
   ranking_method: {
     adapter: string;
+    organizer_confirmed: true;
+  };
+  marketplace: {
+    adapter: string;
+    protocol_version: string;
+    organizer_confirmed: true;
+  };
+  purchase_convention: {
+    adapter: string;
+    memo_prefix: string;
+    canonical_recipient: "principal";
+    exact_price: true;
+    organizer_confirmed: true;
+  };
+  canonical_identity: {
+    seller_key: "principal";
+    mappings_verified: true;
     organizer_confirmed: true;
   };
   round_timing: ArenaTiming;
   delivercheck_origin: string;
   payment_room_binding: boolean;
+  timeouts: ArenaTimeouts;
 }
 
 export type ArenaConfig = SimulationArenaConfig | LiveArenaConfig;
@@ -93,7 +115,7 @@ export interface SharedNetAdapter {
   readonly mode: ArenaMode;
   identity(): Promise<{ room_id: string | null; instance_id: string | null; principal_id: string | null }>;
   read(after: number, limit?: number): Promise<MessagePage>;
-  wait(timeoutSeconds: number, minimum?: number): Promise<MessagePage>;
+  wait(timeoutSeconds: number, minimum?: number, after?: number): Promise<MessagePage>;
   say(content: string): Promise<{ message_id: string }>;
   reply(messageId: string, content: string): Promise<{ message_id: string }>;
   balance(): Promise<CreditBalance>;
@@ -104,6 +126,7 @@ export interface SharedNetAdapter {
     memo: string;
     bind_to_room: boolean;
   }): Promise<{ transfer: CreditTransfer; receipt_message_id?: string }>;
+  protocolStatus(): Promise<{ cli_version: string; server_protocol_version: string }>;
 }
 
 export interface ParsedServiceRequest {
@@ -134,10 +157,15 @@ export interface ArenaProduct {
   product_id: string;
   name: string;
   seller: ConfirmedIdentity<PaymentIdentityKind>;
+  /** Canonical seller owner. Required when seller.kind is not principal. */
+  seller_principal_id?: string;
+  /** Exact payment address with a verified mapping to the canonical Principal. */
+  payment_recipient?: ConfirmedIdentity<PaymentIdentityKind> & { principal_id: string; mapping_verified: true };
   price_credits: number;
   useful_purpose: string;
-  probe_input: unknown;
-  assertion: ProductAssertion;
+  probe_input?: unknown;
+  assertion?: ProductAssertion;
+  endpoint?: string;
 }
 
 export interface ProductExecution {
@@ -149,9 +177,12 @@ export interface ProductExecution {
 }
 
 export interface ProductMarketplace {
-  discover(): Promise<ArenaProduct[]>;
+  readonly adapter_id?: string;
+  readonly protocol_version?: string;
+  discover(): Promise<unknown[]>;
   available(product: ArenaProduct): Promise<boolean>;
   invoke(product: ArenaProduct, orderId: string): Promise<ProductExecution>;
+  critique?(product: ArenaProduct, execution: ProductExecution): ProductEvaluation | null;
 }
 
 export interface ProductEvaluation {
@@ -178,6 +209,26 @@ export interface RankingAdapter {
 
 export interface DeliverCheckClient {
   invoke(service: "diagnose" | "repair", request: DeliverCheckRequest): Promise<unknown>;
+}
+
+export interface ArenaTimeouts {
+  sharednet_read_ms: number;
+  ledger_ms: number;
+  marketplace_ms: number;
+  product_invocation_ms: number;
+  delivercheck_ms: number;
+}
+
+export interface StoredSellerOrder {
+  order: SellerOrder;
+  request: DeliverCheckRequest;
+}
+
+export interface PendingOrderStore {
+  put(value: StoredSellerOrder): Promise<void>;
+  get(orderId: string): Promise<StoredSellerOrder | null>;
+  list(): Promise<StoredSellerOrder[]>;
+  delete(orderId: string): Promise<void>;
 }
 
 export type LedgerDetail = string | number | boolean | null;

@@ -6,3 +6,4 @@ coverage/
 !.env.example
 .sharednet/
 .git-local/
+.arena-state/

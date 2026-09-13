@@ -1,206 +1,115 @@
 # DeliverCheck Arena runner specification
 
-Status: the guarded operator, durable state, adapters, and deterministic simulation are implemented on `codex/arena-operator`. Live operation remains blocked on the unconfirmed protocol items in [arena-protocol.md](arena-protocol.md).
+Status: Checkpoint 6B3 implements the unattended control loop, recovery stores, bounded adapters, and adversarial simulation on `codex/arena-operator`. Live startup remains fail-closed until the organizer supplies the protocol profile listed in [arena-protocol.md](arena-protocol.md).
 
-## Objective
+## Execution and authority
 
-The runner will operate one DeliverCheck seat through the SharedNet Arena while keeping SharedNet credentials opaque. It will monitor a Room, present the product, accept bounded requests, call the deployed DeliverCheck service, deliver results, verify payments from the official ledger, evaluate other products in both competition rounds, and maintain a durable audit trail.
+`simulate` is the default mode. It uses only in-memory SharedNet effects and reports `real_sharednet_side_effects: 0`. `live` requires all of the following before the CLI adapter is allowed to operate:
 
-The first implementation must use the pinned official CLI as the credential boundary. It may consume the CLI's JSON output, public IDs, messages, balances, and transfer records. It must never open, copy, print, persist, or forward the CLI's credential files or bearer values.
+- the separate environment switch `DELIVERCHECK_ARENA_LIVE=enabled`;
+- a bounded public JSON profile named by `DELIVERCHECK_ARENA_CONFIG`;
+- a trusted, repository-local organizer integration module named by `DELIVERCHECK_ARENA_INTEGRATION`;
+- exact reviewed CLI `0.1.8` and server protocol `1.0.0`, verified from live status/discovery rather than copied configuration alone;
+- organizer-confirmed Room, Instance, account Principal, submission identity, seller recipient and its Principal mapping;
+- a complete list of DeliverCheck self-identities;
+- organizer-confirmed marketplace, purchase, ranking, canonical seller, timing, Room-binding, and exact-price conventions; and
+- a clean repository whose history contains production release `b09b30eda9c1c450e0490600da4372554d1894c1`.
 
-## Hard enablement gate
+The profile contains public identifiers and protocol choices only. SharedNet credentials remain in the official CLI store. The runner does not open that store or accept credentials from messages, product listings, configuration, headers, or customer payloads.
 
-The runner has two modes: `simulate` and `live`. `live` must fail closed during startup unless an operator-supplied, versioned Arena profile contains organizer-confirmed values for:
+The live entrypoint is `npm run arena:live`. It is noninteractive. On Linux it invokes `npx`; on native Windows it invokes `npx.cmd`. All subprocess calls use argument arrays, `shell: false`, bounded output, and deadlines.
 
-- Arena Room and seat/Agent requirements;
-- start, round, and submission deadlines with timezone;
-- product catalogue and seller/purchaser message schemas;
-- seller payee and payment-correlation rules;
-- ranking submission format and destination;
-- Round 2 accounting rules; and
-- all submission-validity conditions.
+## Single-writer unattended loop
 
-The profile contains public protocol data only. Invite and credential material remains managed by the SharedNet CLI and is never copied into the profile. The runner validates the SharedNet server's discovery `protocol_version`, requires CLI `0.1.8` for this design revision, and refuses a newer unreviewed version.
+The entrypoint atomically acquires `<activity-ledger>.lock`. A second process using that state file is refused. A stale lock whose process no longer exists is replaced; a malformed lock requires manual inspection. `SIGINT` and `SIGTERM` stop new work, record a resumable shutdown event, release the lock, and leave the phase unchanged.
 
-## Safety and authority boundaries
+The loop validates preflight, publishes or reconciles the presentation, waits for absolute round timestamps, monitors seller requests, executes Round 1, waits for Round 2, executes purchases, and finishes without prompts. Seller monitoring runs between external critique, ranking, payment, and invocation actions. Every network family has a configurable bound no greater than 240 seconds. Transient reads are retried up to a bounded attempt count with exponential backoff. Configuration, identity, ledger-integrity, budget, and missed-deadline failures halt; exhausted isolated product/order failures remain recorded without halting unrelated work.
 
-The runner separates capabilities into small adapters:
-
-| Adapter | Simulation | Live |
-| --- | --- | --- |
-| Room reader | Fixture-only | May invoke `read`, `wait`, or `watch` for the selected seat |
-| Room sender | Throws `simulation_mutation_denied` | May invoke `say` after policy checks |
-| Credit reader | Fixture-only | May invoke `balance` and `ledger` |
-| Credit payer | Throws `simulation_mutation_denied` | May invoke `pay` after budget and dedupe checks |
-| DeliverCheck client | Stub or bounded production call explicitly selected by the operator | May call only the configured HTTPS DeliverCheck origin |
-| Ranking submitter | Records intended submission only | Disabled until the organizer-confirmed method is implemented |
-
-No query parameter, Room message, customer payload, HTTP header, or claimed identity can enable a capability, raise a budget, change a deadline, alter the configured payee, select a different DeliverCheck origin, or switch simulation into live mode. Live mutation adapters require an explicit startup mode selected outside message data.
-
-Simulation builds must not contain a code path to the live adapter's `say`, `pay`, mutating Room/Decision commands, or authenticated SharedNet POST operations. The simulation adapter records synthetic sends and payments in memory so the workflows can be tested, while its real-side-effect counter remains zero. Simulation can replay sanitized fixtures and write only its local simulation ledger.
-
-## Persistent monitoring and reconnection
-
-The runner uses a fixed working directory bound to one Arena seat. It never parses the CLI's private state files. The preferred process boundary is:
+The durable phase machine is:
 
 ```text
-sharednet watch --on message --run <runner-batch-handler> --as <arena_instance>
+preflight -> waiting -> critique -> market -> completed
+      \          \          \          \
+                         unsafe/unrecoverable -> halted
 ```
 
-The handler receives each JSON batch on standard input. It writes an append-only `batch_received` event and fsyncs it before processing. It exits successfully only after every message has reached a terminal local state or a safely retryable state has been recorded. A non-zero exit leaves the SharedNet cursor before the batch so the CLI can replay it.
+`critique` and `market` are valid startup phases. Re-running either phase reconstructs completed substeps and continues them idempotently.
 
-On startup or reconnection the runner:
+## Durable state and reconciliation
 
-1. verifies the pinned CLI and server protocol versions;
-2. calls read-only identity/session status and confirms the configured Principal, Instance, and Arena Room;
-3. reads the last durable local event and reconstructs indexes from the append-only ledger;
-4. reconciles every side effect whose outcome was unknown at shutdown;
-5. uses `read --after <last-observed-sequence> --order asc` to inspect the gap without advancing the CLI cursor;
-6. resumes `watch` from the CLI-managed handled cursor; and
-7. ignores own messages and deduplicates every incoming message ID and sequence.
+The mode-0600 append-only JSON Lines ledger is hash-chained and fsynced after every record. It stores public identifiers, stable operation IDs, hashes, sequence numbers, transfer IDs, amounts, bounded outcome codes, and before/after intent markers. It excludes credentials, invite material, raw CLI stderr, full Room messages, customer payloads, and full DeliverCheck responses.
 
-If the Instance lease expires, the CLI may renew it. Authentication failure, identity drift, Room mismatch, a sequence regression, malformed JSON, or a discontinuity that cannot be reconciled stops live processing. The runner does not automatically join a replacement seat.
+Pending service requests must be available after their source message disappears, so they use a separate mode-0700 directory with one atomic mode-0600 order file per request. Each file binds the complete validated request to the order metadata and hash. It is deleted only after delivery is confirmed. The message cursor and pending-order store are independent.
 
-## Append-only activity ledger
+On every monitoring cycle the operator:
 
-The ledger is local durable JSON Lines with one canonical JSON object per line and a hash chain. Each event contains:
+1. reads all available Room pages after the application cursor, up to the configured safe page bound;
+2. processes each message independently and records its sequence/message-ID binding;
+3. long-polls only if the snapshot is empty; and
+4. rechecks every stored `awaiting_payment`, `payment_verified`, or pending-delivery order even if its original message never reappears.
 
-```text
-event_id, prior_hash, event_hash, recorded_at, mode, arena_profile_version,
-room_id, seat_instance_id, message_id?, sequence?, order_id?, product_id?,
-request_hash?, response_hash?, transfer_id?, amount?, state, outcome_code
-```
+One order failure produces an order-scoped event and does not block other orders. Historical presentation and delivery reconciliation also page from a bounded sequence boundary. If the complete bounded history cannot prove whether a send happened, the operator refuses to resend.
 
-It stores hashes and the minimum redacted operational metadata needed for reconciliation. It excludes credentials, invite material, full customer payloads, full DeliverCheck results, raw CLI stderr, and arbitrary message text. Any diagnostic excerpt is length-bounded and redacted.
+## Seller workflow
 
-Before a mutation, the runner appends and syncs an `intent` event with a stable internal operation ID. After it observes the authoritative outcome, it appends `confirmed` or `failed`. The ledger is never edited in place. Startup verifies the hash chain and refuses live operation on corruption.
+The presentation advertises only DeliverCheck `diagnose` at 0 credits and `repair` at exactly 7 credits. Diagnose never checks payment and never invokes repair. Repair is held until the seller's official SharedNet ledger proves a matching transfer.
 
-Deduplication indexes reconstructed from the ledger include:
+Ledger search pages with documented `ledger --before <transfer-id> --last 100`. It stops at the request timestamp boundary, at a target transfer, at exhaustion, or at the safe page limit. A receipt message or a claimed transfer ID is never proof. A valid incoming transfer must match:
 
-- handled `(room_id, message_id)` and `(room_id, sequence)` pairs;
-- one accepted request per organizer-defined order/correlation ID;
-- one delivery per accepted request version;
-- one consumed incoming transfer ID per paid seller request;
-- one purchase intent per Round 2 product/attempt;
-- one submitted review/disagreement per Round 1 product; and
-- one final ranking submission per round.
+- buyer Principal and paying Instance from the message envelope;
+- seller Principal and exact addressed-to recipient;
+- unique order ID memo;
+- exactly 7 credits;
+- configured Room binding; and
+- a timestamp no earlier than the order.
 
-## Message validation and product presentation
+If multiple valid transfers exist, the operator deterministically selects the earliest by timestamp then transfer ID, fulfills once, and records every other valid transfer as surplus for audit. It never delivers twice or automatically refunds.
 
-All messages are treated as untrusted text. Once the organizer publishes the grammar, the parser will require a version, action/type, unique correlation ID, buyer public identity, product ID, declared price, and a bounded payload or artifact reference. Unknown versions, missing fields, duplicate keys, conflicting identities, oversized content, expired requests, or requests outside the configured round become explicit rejections without calling DeliverCheck.
+The request goes to the bounded DeliverCheck client only after settlement. Service intent, response hash, delivery intent, and confirmed Room message are recorded separately. A crash after sending is reconciled from paginated Room history. Public delivery remains bounded and contains no stack, credential, local path, or raw SharedOS audit.
 
-The parser enforces SharedNet's 32,768-byte message maximum and the narrower service limits relevant to each embedded request. Artifact use remains disabled until the Arena confirms when it is permitted and how an artifact is bound to a purchase.
+## Catalogue and canonical sellers
 
-The runner never treats a display name or identity written inside message content as authentication. Sender Principal, Agent, and Instance metadata from the SharedNet message envelope is recorded separately and matched according to the organizer's identity rule.
+Marketplace output is untrusted. The operator considers at most 500 listings. Each listing is JSON-bounded to 64 KiB; names, purposes, IDs, prices, HTTPS endpoint metadata, and identity mappings have independent limits. Malformed, duplicate, unsupported, credential-bearing URL, or unconfirmed listings are skipped with a sanitized audit event. One bad listing cannot reject the catalogue.
 
-Product presentation is generated from the production agent card and listing at the configured DeliverCheck origin. It presents only:
+A Principal ID is the canonical seller key. An Agent or Instance alias is accepted only with an explicit organizer-confirmed mapping to one Principal and an exact verified payment recipient. Agent, Instance, Principal, seat, and node identifiers are never inferred to be equivalent. Seller counts, restart exclusions, and duplicate-alias suppression use canonical Principal IDs.
 
-- **DeliverCheck** — “Make one agent’s output usable by the next.”
-- `diagnose`: 0 credits; validates one bounded top-level JSON object without modification.
-- `repair`: 7 credits; runs SharedOS-authorized repair and independent verification.
-- maximum request body 64 KiB and application deadline 240 seconds; and
-- factual-truth proof, remote references, arbitrary fetching, credentials, CSV, persistence, and billing verification are outside the service.
+Every configured DeliverCheck Principal, Agent, Instance, submission, seat, and recipient identity is excluded from evaluation and purchasing. Live payment refuses an alias without its verified recipient Principal mapping.
 
-Presentation must use the organizer-confirmed message type and schedule. It must not claim that the public price field verifies payment or that DeliverCheck is registered before registration is confirmed.
+## Round 1
 
-## Seller request, payment, execution, and delivery flow
+The operator selects actual attempts from at least three distinct canonical sellers. Availability and invocation failures are isolated by product. An invocation timeout can be recorded as the specific disagreement because it is evidence from an actual bounded attempt; catalogue rejection alone cannot become a disagreement. Successful results require a configured product-specific critique strategy or concrete protocol/evidence failure. The operator does not assume a third-party listing contains DeliverCheck's simulation-only `assertion` structure.
 
-For `diagnose`, after schema/message validation and duplicate checks, the runner calls the production diagnose endpoint or MCP tool, records only request/result hashes and the sanitized outcome, and sends the organizer-defined response. No repair operation and no payment check occurs.
+Each evaluation records an evidence hash, latency, protocol/evidence outcome, one reproducible disagreement, score, product ID, and canonical seller. Ranking is deterministic. A `ranking_submission_intent` precedes the call, and the organizer adapter must be idempotent for stable operation ID `round1-ranking`. Restart resubmits that same operation ID; it never invents or uses SharedNet membership decisions as rankings.
 
-For `repair`, the state machine is:
+## Round 2
 
-```text
-received -> validated -> awaiting_payment -> payment_confirmed
-         -> executing -> result_ready -> delivery_confirmed
-```
+The planner chooses useful services from at least three distinct canonical non-self sellers. Settled spend must be 80–100 whole credits. Products and sellers already purchased before restart are excluded.
 
-Terminal failures include `invalid_request`, `payment_mismatch`, `deadline_expired`, `service_rejected`, and `delivery_rejected`. Operational uncertainty remains retryable and is never converted into successful repair.
+For each purchase, the ledger records intent and payment-attempt markers before calling `pay`. The official outgoing transfer is then located by pagination and must exactly match transfer ID, source Principal, destination Principal, addressed recipient, memo/order, amount, and Room. Absolute balance change is not used as payment proof because incoming sales can occur concurrently. `sent` and `received` counters are recorded only as secondary consistency evidence.
 
-Payment confirmation uses only a transfer in the seller Principal's official `ledger`. A message, screenshot, free-form receipt, quoted transfer ID, HTTP request field, or DeliverCheck `priceCredits` value is insufficient. The matcher requires all organizer-confirmed fields, expected to include:
+If the process crashes during payment, restart first searches the official ledger. Once any payment call has an unknown outcome, the operator does not issue it again merely because a recent page is empty. It keeps the purchase pending until the exact transfer appears or the round ends safely. This avoids duplicate irreversible transfers.
 
-- incoming direction to the configured seller Principal;
-- an addressed-to Agent or Instance accepted by the Arena profile;
-- exactly 7 credits for `repair`;
-- the unique order ID in the required memo field;
-- the correct Arena Room binding when required;
-- the expected buyer Principal and paying Instance when required; and
-- a transfer creation time inside the request window.
+Settlement is persisted before product invocation. A crash then retries the vendor operation with the same stable purchase ID. If a paid vendor invocation times out or fails, the failure is recorded accurately, the settled credits still count, and the operator continues with remaining requirements. No service failure can turn a transfer into an invented success.
 
-A transfer ID can satisfy one order only. Ambiguous or multiple matches stop the order for review. The runner never refunds, reverses, or spends received credits automatically.
+## Simulation acceptance evidence
 
-After payment confirmation, the runner invokes only `https://delivercheck.vercel.app/api/v1/repair` or the equivalent configured MCP tool with the bounded request contract. It accepts `passed_checks` only from the complete deployed coordinator result, preserves `needs_information` and `cannot_repair`, and keeps operational errors distinct. It binds delivery to the exact response hash and candidate hash returned by the verified pipeline.
+`npm run arena:simulate` uses no live adapter. It injects and proves:
 
-The outgoing result is shaped by the organizer-confirmed delivery grammar and size rule. If the result exceeds the Room message limit, the runner must use an organizer-approved artifact flow; it must not silently truncate evidence. Public errors are sanitized and contain no raw payload, stack, path, credential, or internal SharedOS audit detail.
+- a delayed paid repair whose transfer is behind more than 100 ledger records;
+- two valid incoming payments with one delivery and a recorded surplus;
+- a forged receipt message;
+- concurrent incoming revenue during Round 2;
+- malformed catalogue data, a DeliverCheck self-listing, a duplicate seller alias, and a failed competitor;
+- a crash/restart in critique, after payment verification in market, and after a delivery send;
+- three evaluations from distinct canonical sellers and one concrete disagreement each;
+- one idempotent ranking submission;
+- exactly 80 credits across three distinct sellers;
+- cursor-correct reads/waits, paginated messages and ledger, and pending-delivery reconciliation;
+- both rounds completed with zero prompts; and
+- `real_sharednet_side_effects: 0`.
 
-Before retrying an uncertain send, the runner searches later Room messages for its stable order/delivery marker. It does not blindly repeat a message after an unknown outcome.
+Simulation output is evidence about local control flow only. It is not an Arena entry, payment receipt, product registration, or live SharedNet result.
 
-## Round 1 evaluation and ranking
+## Organizer-only blockers
 
-The runner must discover candidates only through the organizer-confirmed Arena catalogue. It selects at least three distinct products and records the selection before invoking any of them. DeliverCheck itself does not count as one of the products being evaluated.
-
-For each product it runs a bounded, product-appropriate trial and records:
-
-- product and seller public IDs;
-- the exact test objective and input hash;
-- returned output/evidence hash;
-- latency and protocol outcome;
-- one concrete disagreement tied to observable output, such as an incorrect field, unsupported factual claim, missing evidence, protocol mismatch, or failure to meet an advertised behavior; and
-- a short reproducible reason for the disagreement.
-
-Generic criticism does not satisfy the disagreement requirement. If the runner cannot produce one evidence-backed disagreement, it tries another bounded case or chooses another product. It must not fabricate a flaw.
-
-After at least three products have one specific disagreement each, the runner computes a deterministic ranking from documented criteria such as task completion, correctness, evidence, protocol compliance, and latency. It records the proposed ordered list and rationale. Submission remains disabled until the organizer confirms the ranking command/message/API and deadline. The existing SharedNet `decision approve/deny` commands must never be used for ranking.
-
-## Round 2 purchase plan
-
-Before Round 2, the runner takes a read-only balance snapshot and builds a complete purchase plan across at least three distinct products. The default policy is:
-
-```text
-minimum settled spend: 80 credits
-maximum authorized spend: 100 credits
-minimum distinct products: 3
-per-product maximum: organizer profile or explicit operator ceiling
-```
-
-The planner chooses the lowest deterministic useful combination inside the 80–100 credit window. If the confirmed catalogue cannot satisfy it, the runner stops before paying. Room messages cannot revise a budget. The runner also refuses a plan above the official balance or past the Round 2 purchase cutoff.
-
-For every purchase, it appends and syncs a unique intent before running `pay`. Its memo includes the organizer-approved unique purchase ID. If the CLI result is lost or the runner crashes, restart first queries `ledger` for that exact recipient, amount, memo, and Room binding. It never repeats an uncertain payment until reconciliation proves no transfer occurred. Because transfers are final, an ambiguous outcome stops further spending.
-
-After each confirmed transfer it refreshes the official balance, verifies the debit and transfer record, marks the transfer ID consumed, then follows the product's confirmed invocation/delivery protocol. It tracks planned, submitted, settled, failed, and unknown amounts separately. Only settled official transfers count toward the 80-credit minimum.
-
-The runner halts spending when any of these is true:
-
-- settled plus unknown exposure reaches the maximum;
-- fewer than three distinct products can be completed within the remaining budget;
-- an unknown transfer cannot be reconciled;
-- the catalogue, recipient, price, or Room binding changes after planning;
-- the official balance differs unexpectedly; or
-- the deadline safety margin is reached.
-
-## Deadlines and bounded execution
-
-All Arena timestamps must be absolute instants derived from organizer-provided local time plus timezone. The runner keeps separate margins for purchase settlement, service execution, delivery, and ranking submission. New work is refused when its worst-case 240-second DeliverCheck deadline plus the configured network and submission margin would cross the relevant cutoff.
-
-Every CLI and HTTP subprocess has a deadline, bounded output capture, and sanitized error mapping. The monitor uses the server's maximum 25-second long poll and remains interruptible. There is no load testing, speculative payment, unbounded retry, or retry past a round cutoff.
-
-## Simulation acceptance criteria
-
-Before live enablement, deterministic fixtures must demonstrate:
-
-1. cursor replay and reconnection without duplicate handling;
-2. duplicate request, delivery, and transfer rejection;
-3. a successful free diagnosis;
-4. paid repair held until an official matching ledger record exists;
-5. rejection of a message-claimed or mismatched payment;
-6. lost payment response reconciled from the ledger without a second transfer;
-7. three Round 1 products with one evidence-backed disagreement each and a proposed ranking;
-8. an exactly 80-credit Round 2 plan across at least three products;
-9. deadline and budget cutoffs;
-10. activity-ledger hash-chain validation and corruption failure; and
-11. zero calls to all sender, payer, join, decision-resolution, and authenticated POST adapters.
-
-Simulation output must be labeled `SIMULATION` and cannot be accepted as an Arena submission, purchase receipt, seller delivery, or proof of live operation.
-
-## Remaining design blockers
-
-The simulation control layer is implemented without an Arena-specific product or ranking assumption. The organizer must still supply the missing Arena profile fields listed in [arena-protocol.md](arena-protocol.md). After those fields are available, the confirmed discovery and ranking adapters can be wired into the existing interfaces and exercised in a read-only live shadow run before message sending or credit spending is enabled.
+The organizer must still provide the Arena Room/invite and Agent rule, submission identity, seller/payment convention, product discovery and invocation protocol, canonical identity mappings, ranking method, absolute round timing/timezone, and the missing validity condition. A repository-local integration module can be implemented only from that confirmed protocol. Until then, `npm run arena:live` fails before SharedNet side effects.

@@ -43,12 +43,12 @@ describe("seller payment verification", () => {
     expect(matchRepairPayment(order, [transfer()], policy, new Set(["txn_PAYMENT001"]))).toEqual({ accepted: false, code: "duplicate_payment" });
   });
 
-  it("rejects two otherwise valid payments for one order as duplicates", () => {
-    expect(matchRepairPayment(order, [transfer(), transfer({ id: "txn_PAYMENT002" })], policy, new Set())).toEqual({ accepted: false, code: "duplicate_payment" });
+  it("selects one deterministic valid payment and identifies surplus transfers", () => {
+    expect(matchRepairPayment(order, [transfer(), transfer({ id: "txn_PAYMENT002" })], policy, new Set())).toEqual({ accepted: true, transfer: transfer(), surplus_transfer_ids: ["txn_PAYMENT002"] });
   });
 
   it("does not let an invalid same-memo transfer mask a valid official transfer", () => {
-    expect(matchRepairPayment(order, [transfer({ id: "txn_BADPAY0001", addressed_to: "i_WRONG00001" }), transfer()], policy, new Set())).toEqual({ accepted: true, transfer: transfer() });
+    expect(matchRepairPayment(order, [transfer({ id: "txn_BADPAY0001", addressed_to: "i_WRONG00001" }), transfer()], policy, new Set())).toEqual({ accepted: true, transfer: transfer(), surplus_transfer_ids: [] });
   });
 });
 

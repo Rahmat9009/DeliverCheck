@@ -1,4 +1,6 @@
 import { validateLiveConfig } from "./config.js";
+import { readMessagesPaginated } from "./pagination.js";
+import { classifyArenaFailure, withTimeout } from "./resilience.js";
 import { runRoundOne, runRoundTwo, type RoundOneResult, type RoundTwoPolicy, type RoundTwoResult } from "./rounds.js";
 import { DeliverCheckSellerWorkflow, type SellerOutcome, type SellerPolicy } from "./seller.js";
 import type { ArenaStateController } from "./state.js";
@@ -9,6 +11,8 @@ import type {
   RankingAdapter,
   SharedNetAdapter,
   SharedNetMessage,
+  PendingOrderStore,
+  ArenaTimeouts,
 } from "./types.js";
 
 export interface ArenaOperatorOptions {
@@ -22,6 +26,9 @@ export interface ArenaOperatorOptions {
   round_two_policy: RoundTwoPolicy;
   order_id?: (message: SharedNetMessage) => string;
   now?: () => number;
+  orders?: PendingOrderStore;
+  timeouts?: ArenaTimeouts;
+  after_external_action?: () => Promise<void>;
 }
 
 export class ArenaOperator {
@@ -34,6 +41,8 @@ export class ArenaOperator {
   readonly #sellerPolicy: SellerPolicy;
   readonly #roundTwoPolicy: RoundTwoPolicy;
   readonly #now: () => number;
+  readonly #timeouts: ArenaTimeouts;
+  readonly #afterExternalAction: (() => Promise<void>) | undefined;
 
   constructor(options: ArenaOperatorOptions) {
     this.#config = options.config ?? { mode: "simulate" };
@@ -44,12 +53,22 @@ export class ArenaOperator {
     this.#roundTwoPolicy = options.round_two_policy;
     this.#sellerPolicy = options.seller_policy;
     this.#now = options.now ?? Date.now;
+    this.#timeouts = options.timeouts ?? {
+      sharednet_read_ms: 30_000,
+      ledger_ms: 30_000,
+      marketplace_ms: 30_000,
+      product_invocation_ms: 60_000,
+      delivercheck_ms: 240_000,
+    };
+    this.#afterExternalAction = options.after_external_action;
     this.#seller = new DeliverCheckSellerWorkflow(
       options.state,
       options.sharednet,
       options.delivercheck,
       options.seller_policy,
       options.order_id ?? ((message) => `order:${message.id}`),
+      options.orders,
+      this.#timeouts,
     );
   }
 
@@ -61,6 +80,9 @@ export class ArenaOperator {
       const live = validateLiveConfig(this.#config);
       if (this.#sharednet.mode !== "live") throw new Error("Live Arena mode requires the live SharedNet adapter.");
       if (this.#ranking.method !== live.ranking_method.adapter) throw new Error("The ranking adapter does not match the organizer-confirmed method.");
+      if (this.#marketplace.adapter_id !== live.marketplace.adapter || this.#marketplace.protocol_version !== live.marketplace.protocol_version) {
+        throw new Error("The marketplace adapter does not match the organizer-confirmed method.");
+      }
       if (
         this.#sellerPolicy.room_id !== live.arena_room_id ||
         this.#sellerPolicy.seller_principal_id !== live.account_principal_id ||
@@ -68,12 +90,16 @@ export class ArenaOperator {
         this.#sellerPolicy.payment_recipient.id !== live.seller_payment_recipient.id ||
         this.#sellerPolicy.require_room_binding !== live.payment_room_binding
       ) throw new Error("The seller policy does not match the organizer-confirmed live profile.");
-      for (const selfId of [live.account_principal_id, live.arena_instance_id, live.seller_payment_recipient.id]) {
+      for (const selfId of live.self_identities.map((identity) => identity.id)) {
         if (!this.#roundTwoPolicy.self_ids.has(selfId)) throw new Error("Round 2 self-payment protection is incomplete.");
       }
       const identity = await this.#sharednet.identity();
       if (identity.room_id !== live.arena_room_id || identity.instance_id !== live.arena_instance_id || identity.principal_id !== live.account_principal_id) {
         throw new Error("The selected SharedNet seat does not match the live Arena profile.");
+      }
+      const protocol = await this.#sharednet.protocolStatus();
+      if (protocol.cli_version !== live.cli_version || protocol.server_protocol_version !== live.server_protocol_version) {
+        throw new Error("The active SharedNet CLI or server protocol version does not match the reviewed live profile.");
       }
     } else if (this.#sharednet.mode !== "simulate") {
       throw new Error("Simulation mode refuses a live SharedNet adapter.");
@@ -100,15 +126,22 @@ export class ArenaOperator {
   async monitorOnce(timeoutSeconds = 25): Promise<SellerOutcome[]> {
     if (!["waiting", "critique", "market"].includes(this.phase)) throw new Error("Room monitoring is not allowed in the current Arena phase.");
     const outcomes: SellerOutcome[] = [];
-    let page = await this.#sharednet.read(this.state.cursor, 100);
-    if (page.items.length === 0) page = await this.#sharednet.wait(timeoutSeconds, 1);
-    for (const message of [...page.items].sort((left, right) => left.sequence - right.sequence)) {
+    let messages = (await readMessagesPaginated(this.#sharednet, this.state.cursor, { timeout_ms: this.#timeouts.sharednet_read_ms })).items;
+    if (messages.length === 0) messages = (await withTimeout(this.#sharednet.wait(timeoutSeconds, 1, this.state.cursor), this.#timeouts.sharednet_read_ms, "sharednet_wait_timeout")).items.filter((item) => item.sequence > this.state.cursor);
+    for (const message of [...messages].sort((left, right) => left.sequence - right.sequence)) {
       if (this.state.messageIds.has(message.id)) {
         const pendingOrder = this.state.ordersByMessage.get(message.id);
         if (pendingOrder === undefined || pendingOrder.status === "delivered" || pendingOrder.status === "rejected") continue;
       }
-      outcomes.push(await this.handleSellerMessage(message));
+      try {
+        outcomes.push(await this.handleSellerMessage(message));
+      } catch (error) {
+        await this.#state.ledger.append({ kind: "message_processing_failed", phase: this.phase, details: { message_id: message.id, message_sequence: message.sequence, reason: "isolated_operational_failure" } });
+        if (classifyArenaFailure(error) !== "transient") throw error;
+        outcomes.push({ status: "operational_failure", order_id: this.state.ordersByMessage.get(message.id)?.order_id ?? "uncreated", code: "isolated_message_failure" });
+      }
     }
+    outcomes.push(...await this.#seller.reconcilePendingOrders());
     return outcomes;
   }
 
@@ -122,34 +155,41 @@ export class ArenaOperator {
   }
 
   async runRoundOne(): Promise<RoundOneResult> {
-    if (this.phase !== "waiting") throw new Error("Round 1 must begin from the waiting phase.");
+    if (this.phase !== "waiting" && this.phase !== "critique") throw new Error("Round 1 must begin or resume from the waiting/critique phase.");
     this.assertRoundWindow(1);
-    await this.#state.transition("critique", "round_1_started");
-    try {
-      const result = await runRoundOne(this.#state, this.#marketplace, this.#ranking, this.#config.mode === "live" ? { deadline_at: Date.parse(this.#config.round_timing.round_1_ends_at), now: this.#now } : undefined);
-      await this.#state.transition("market", "round_1_completed");
-      return result;
-    } catch (error) {
-      await this.halt("round_1_failed");
-      throw error;
-    }
+    if (this.phase === "waiting") await this.#state.transition("critique", "round_1_started");
+    const deadline = this.#config.mode === "live" ? { deadline_at: Date.parse(this.#config.round_timing.round_1_ends_at), now: this.#now } : undefined;
+    const result = await runRoundOne(this.#state, this.#marketplace, this.#ranking, {
+      ...deadline,
+      self_ids: this.#roundTwoPolicy.self_ids,
+      timeout_ms: this.#timeouts.product_invocation_ms,
+      discovery_timeout_ms: this.#timeouts.marketplace_ms,
+      ...(this.#afterExternalAction === undefined ? {} : { after_external_action: this.#afterExternalAction }),
+    });
+    await this.#state.transition("market", "round_1_completed");
+    return result;
   }
 
   async runRoundTwo(): Promise<RoundTwoResult> {
     if (this.phase !== "market") throw new Error("Round 2 must begin from the market phase.");
     this.assertRoundWindow(2);
-    try {
-      const policy = this.#config.mode === "live" ? { ...this.#roundTwoPolicy, deadline_at: Date.parse(this.#config.round_timing.round_2_ends_at), now: this.#now } : this.#roundTwoPolicy;
-      const result = await runRoundTwo(this.#state, this.#sharednet, this.#marketplace, policy);
-      await this.#state.transition("completed", "round_2_completed");
-      return result;
-    } catch (error) {
-      await this.halt("round_2_failed");
-      throw error;
-    }
+    const policy = this.#config.mode === "live" ? { ...this.#roundTwoPolicy, deadline_at: Date.parse(this.#config.round_timing.round_2_ends_at), now: this.#now } : this.#roundTwoPolicy;
+    const result = await runRoundTwo(this.#state, this.#sharednet, this.#marketplace, {
+      ...policy,
+      ledger_timeout_ms: this.#timeouts.ledger_ms,
+      discovery_timeout_ms: this.#timeouts.marketplace_ms,
+      invocation_timeout_ms: this.#timeouts.product_invocation_ms,
+      ...(this.#afterExternalAction === undefined ? {} : { after_external_action: this.#afterExternalAction }),
+    });
+    await this.#state.transition("completed", "round_2_completed");
+    return result;
   }
 
   async halt(reason: string): Promise<void> {
     if (this.phase !== "halted" && this.phase !== "completed") await this.#state.transition("halted", reason);
+  }
+
+  async recordOperationalFailure(kind: "transient" | "integrity" | "configuration", code: string): Promise<void> {
+    await this.#state.ledger.append({ kind: "operator_failure", phase: this.phase, details: { failure_kind: kind, code } });
   }
 }

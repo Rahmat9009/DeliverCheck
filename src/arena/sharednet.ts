@@ -15,6 +15,10 @@ const CLI_PACKAGE = "sharednet@0.1.8";
 const MAX_OUTPUT_BYTES = 1024 * 1024;
 const MAX_MESSAGE_BYTES = 32_768;
 
+export function sharedNetExecutable(platform = process.platform): "npx" | "npx.cmd" {
+  return platform === "win32" ? "npx.cmd" : "npx";
+}
+
 export interface ArgumentExecutor {
   execute(executable: string, args: readonly string[], timeoutMs: number): Promise<{ stdout: string; stderr: string; exitCode: number }>;
 }
@@ -109,6 +113,7 @@ export class SharedNetCliAdapter implements SharedNetAdapter {
     config: LiveArenaConfig,
     private readonly executor: ArgumentExecutor = new NodeArgumentExecutor(),
     private readonly timeoutMs = 30_000,
+    private readonly fetcher: typeof fetch = fetch,
   ) {
     this.config = validateLiveConfig(config);
   }
@@ -116,7 +121,7 @@ export class SharedNetCliAdapter implements SharedNetAdapter {
   private readonly config: LiveArenaConfig;
 
   private async run<T>(args: readonly string[]): Promise<T> {
-    const result = await this.executor.execute("npx", ["-y", CLI_PACKAGE, ...args, "--json"], this.timeoutMs);
+    const result = await this.executor.execute(sharedNetExecutable(), ["-y", CLI_PACKAGE, ...args, "--json"], this.timeoutMs);
     if (result.exitCode !== 0) {
       throw new SharedNetAdapterError("cli_failed", "The SharedNet CLI operation failed.");
     }
@@ -139,7 +144,7 @@ export class SharedNetCliAdapter implements SharedNetAdapter {
     return this.run<MessagePage>(["read", "--after", String(after), "--limit", String(limit), "--order", "asc", "--as", this.config.arena_instance_id]);
   }
 
-  async wait(timeoutSeconds: number, minimum = 1): Promise<MessagePage> {
+  async wait(timeoutSeconds: number, minimum = 1, _after?: number): Promise<MessagePage> {
     if (!Number.isSafeInteger(timeoutSeconds) || timeoutSeconds < 0 || timeoutSeconds > 25 || !Number.isSafeInteger(minimum) || minimum < 1 || minimum > 100) {
       throw new SharedNetAdapterError("invalid_wait", "The SharedNet wait bounds are invalid.");
     }
@@ -181,6 +186,22 @@ export class SharedNetCliAdapter implements SharedNetAdapter {
     const receiptId = response.receipt?.message?.id ?? response.receipt?.id;
     return { transfer: response.transfer, ...(receiptId === undefined ? {} : { receipt_message_id: receiptId }) };
   }
+
+  async protocolStatus(): Promise<{ cli_version: string; server_protocol_version: string }> {
+    const status = await this.run<{ instance?: { cli_version?: string }; cli_version?: string }>(["session", "status", "--session", this.config.arena_instance_id]);
+    const cliVersion = status.instance?.cli_version ?? status.cli_version;
+    const response = await this.fetcher("https://www.sharednet.ai/api/v1", { signal: AbortSignal.timeout(this.timeoutMs) });
+    if (!response.ok) throw new SharedNetAdapterError("protocol_discovery_failed", "SharedNet protocol discovery failed.");
+    const declared = Number(response.headers.get("content-length"));
+    if (Number.isFinite(declared) && declared > 64 * 1024) throw new SharedNetAdapterError("protocol_discovery_limit", "SharedNet protocol discovery exceeded its size limit.");
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    if (bytes.byteLength > 64 * 1024) throw new SharedNetAdapterError("protocol_discovery_limit", "SharedNet protocol discovery exceeded its size limit.");
+    let discovery: { protocol_version?: string };
+    try { discovery = JSON.parse(new TextDecoder().decode(bytes)) as { protocol_version?: string }; }
+    catch (error) { throw new SharedNetAdapterError("invalid_protocol_status", "SharedNet protocol discovery returned invalid JSON.", { cause: error }); }
+    if (!cliVersion || !discovery.protocol_version) throw new SharedNetAdapterError("invalid_protocol_status", "SharedNet did not report complete protocol versions.");
+    return { cli_version: cliVersion, server_protocol_version: discovery.protocol_version };
+  }
 }
 
 export class SimulatedSharedNetAdapter implements SharedNetAdapter {
@@ -194,11 +215,14 @@ export class SimulatedSharedNetAdapter implements SharedNetAdapter {
   #balance: CreditBalance;
   #nextMessage = 1;
   #nextTransfer = 1;
+  #waitCursor = 0;
+  readonly #concurrentIncomePerPayment: number;
 
-  constructor(input: { messages?: SharedNetMessage[]; transfers?: CreditTransfer[]; balance?: CreditBalance } = {}) {
+  constructor(input: { messages?: SharedNetMessage[]; transfers?: CreditTransfer[]; balance?: CreditBalance; concurrent_income_per_payment?: number } = {}) {
     this.#messages = structuredClone(input.messages ?? []);
     this.#transfers = structuredClone(input.transfers ?? []);
     this.#balance = structuredClone(input.balance ?? { principal_id: "p_SIMULATE01", balance: 100, granted: 100, sent: 0, received: 0 });
+    this.#concurrentIncomePerPayment = input.concurrent_income_per_payment ?? 0;
   }
 
   addMessage(message: SharedNetMessage): void { this.#messages.push(structuredClone(message)); }
@@ -217,19 +241,25 @@ export class SimulatedSharedNetAdapter implements SharedNetAdapter {
 
   async read(after: number, limit = 100): Promise<MessagePage> {
     this.calls.push("read");
-    return { items: this.#messages.filter((m) => m.sequence > after).sort((a, b) => a.sequence - b.sequence).slice(0, limit), next_cursor: null, has_more: false };
+    const all = this.#messages.filter((m) => m.sequence > after).sort((a, b) => a.sequence - b.sequence);
+    const items = all.slice(0, limit);
+    return { items: structuredClone(items), next_cursor: items.length === 0 ? null : String(items.at(-1)!.sequence), has_more: all.length > items.length };
   }
 
-  async wait(_timeoutSeconds: number, minimum = 1): Promise<MessagePage> {
+  async wait(_timeoutSeconds: number, minimum = 1, after?: number): Promise<MessagePage> {
     this.calls.push("wait");
-    const items = this.#messages.slice(0, Math.max(minimum, 1));
-    return { items: structuredClone(items), next_cursor: null, has_more: false };
+    const cursor = Math.max(this.#waitCursor, after ?? 0);
+    const available = this.#messages.filter((message) => message.sequence > cursor).sort((left, right) => left.sequence - right.sequence);
+    const items = available.slice(0, Math.max(minimum, 1));
+    if (items.length > 0) this.#waitCursor = items.at(-1)!.sequence;
+    return { items: structuredClone(items), next_cursor: items.length === 0 ? null : String(this.#waitCursor), has_more: available.length > items.length };
   }
 
   async say(content: string): Promise<{ message_id: string }> {
     this.calls.push("simulate:say");
     const message_id = `msg_SIM${String(this.#nextMessage++).padStart(7, "0")}`;
     this.sent.push({ kind: "say", content, message_id });
+    this.#messages.push({ id: message_id, room_id: "rom_SIMULATE1", sequence: Math.max(0, ...this.#messages.map((item) => item.sequence)) + 1, sender_principal_id: this.#balance.principal_id, sender_agent_id: null, sender_instance_id: "i_SIMULATE01", content, created_at: "2026-09-13T10:00:00.000Z" });
     return { message_id };
   }
 
@@ -237,6 +267,7 @@ export class SimulatedSharedNetAdapter implements SharedNetAdapter {
     this.calls.push("simulate:reply");
     const message_id = `msg_SIM${String(this.#nextMessage++).padStart(7, "0")}`;
     this.sent.push({ kind: "reply", reply_to: messageId, content, message_id });
+    this.#messages.push({ id: message_id, room_id: "rom_SIMULATE1", sequence: Math.max(0, ...this.#messages.map((item) => item.sequence)) + 1, sender_principal_id: this.#balance.principal_id, sender_agent_id: null, sender_instance_id: "i_SIMULATE01", content, created_at: "2026-09-13T10:00:00.000Z" });
     return { message_id };
   }
 
@@ -245,9 +276,10 @@ export class SimulatedSharedNetAdapter implements SharedNetAdapter {
     return structuredClone(this.#balance);
   }
 
-  async ledger(limit = 100): Promise<CreditTransfer[]> {
+  async ledger(limit = 100, before?: string): Promise<CreditTransfer[]> {
     this.calls.push("ledger");
-    return structuredClone(this.#transfers.slice(0, limit));
+    const start = before === undefined ? 0 : Math.max(0, this.#transfers.findIndex((item) => item.id === before) + 1);
+    return structuredClone(this.#transfers.slice(start, start + limit));
   }
 
   async pay(input: { target: string; amount: number; memo: string; bind_to_room: boolean }): Promise<{ transfer: CreditTransfer }> {
@@ -255,6 +287,10 @@ export class SimulatedSharedNetAdapter implements SharedNetAdapter {
     if (this.#balance.balance < input.amount) throw new SharedNetAdapterError("insufficient_balance", "The simulated purse has insufficient credits.");
     this.#balance.balance -= input.amount;
     this.#balance.sent += input.amount;
+    if (this.#concurrentIncomePerPayment > 0) {
+      this.#balance.balance += this.#concurrentIncomePerPayment;
+      this.#balance.received += this.#concurrentIncomePerPayment;
+    }
     const transfer: CreditTransfer = {
       id: `txn_SIM${String(this.#nextTransfer++).padStart(7, "0")}`,
       from_principal_id: this.#balance.principal_id,
@@ -270,5 +306,10 @@ export class SimulatedSharedNetAdapter implements SharedNetAdapter {
     this.#transfers.unshift(transfer);
     this.payments.push(structuredClone(transfer));
     return { transfer: structuredClone(transfer) };
+  }
+
+  async protocolStatus(): Promise<{ cli_version: string; server_protocol_version: string }> {
+    this.calls.push("protocolStatus");
+    return { cli_version: "0.1.8", server_protocol_version: "1.0.0" };
   }
 }

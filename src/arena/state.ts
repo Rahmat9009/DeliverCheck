@@ -5,6 +5,7 @@ import type {
   CreditTransfer,
   SellerOrder,
 } from "./types.js";
+import { ArenaOperationalError } from "./resilience.js";
 
 export interface RecoveredArenaState {
   phase: ArenaPhase;
@@ -25,7 +26,7 @@ export interface RecoveredArenaState {
   presentationPublished: boolean;
   presentationIntentHash: string | null;
   pendingDeliveries: Map<string, { content_hash: string; source_sequence: number }>;
-  pendingPurchases: Map<string, { product_id: string; target: string; amount: number; memo: string }>;
+  pendingPurchases: Map<string, { product_id: string; target: string; seller_id: string; amount: number; memo: string; transfer_id?: string; payment_attempted?: boolean }>;
 }
 
 function text(event: ArenaEvent, key: string): string {
@@ -128,17 +129,35 @@ export function recoverArenaState(events: readonly ArenaEvent[]): RecoveredArena
       state.pendingPurchases.set(text(event, "purchase_id"), {
         product_id: text(event, "product_id"),
         target: text(event, "target"),
+        seller_id: text(event, "seller_id"),
         amount: number(event, "amount"),
         memo: text(event, "memo"),
       });
     }
-    if (event.kind === "purchase_confirmed") {
+    if (event.kind === "purchase_payment_verified") {
       const purchaseId = text(event, "purchase_id");
-      state.pendingPurchases.delete(purchaseId);
+      const pending = state.pendingPurchases.get(purchaseId);
+      if (pending) pending.transfer_id = text(event, "transfer_id");
       state.purchasedProductIds.add(text(event, "product_id"));
       state.purchasedSellerIds.add(text(event, "seller_id"));
       state.consumedTransferIds.add(text(event, "transfer_id"));
       state.spentCredits += number(event, "amount");
+    }
+    if (event.kind === "purchase_payment_attempt") {
+      const pending = state.pendingPurchases.get(text(event, "purchase_id"));
+      if (pending) pending.payment_attempted = true;
+    }
+    if (event.kind === "purchase_confirmed" || event.kind === "purchase_invocation_failed") {
+      const purchaseId = text(event, "purchase_id");
+      state.pendingPurchases.delete(purchaseId);
+      // Compatibility with checkpoint 6B2 ledgers where settlement and invocation
+      // were represented by one purchase_confirmed event.
+      if (event.kind === "purchase_confirmed" && text(event, "transfer_id")) {
+        state.purchasedProductIds.add(text(event, "product_id"));
+        state.purchasedSellerIds.add(text(event, "seller_id"));
+        state.consumedTransferIds.add(text(event, "transfer_id"));
+        state.spentCredits += number(event, "amount");
+      }
     }
   }
   return state;
@@ -174,8 +193,8 @@ export class ArenaStateController {
   assertNewMessage(messageId: string, sequence: number): boolean {
     if (this.state.messageIds.has(messageId)) return false;
     const existing = this.state.sequenceMessages.get(sequence);
-    if (existing !== undefined && existing !== messageId) throw new Error("A SharedNet sequence was replayed with a different message ID.");
-    if (!Number.isSafeInteger(sequence) || sequence < 1) throw new Error("The SharedNet message sequence is invalid.");
+    if (existing !== undefined && existing !== messageId) throw new ArenaOperationalError("integrity", "sequence_rebinding", "A SharedNet sequence was replayed with a different message ID.");
+    if (!Number.isSafeInteger(sequence) || sequence < 1) throw new ArenaOperationalError("integrity", "invalid_sequence", "The SharedNet message sequence is invalid.");
     return true;
   }
 
@@ -189,7 +208,7 @@ export class ArenaStateController {
   async createOrder(order: SellerOrder): Promise<void> {
     const existing = this.state.ordersById.get(order.order_id);
     if (existing !== undefined && existing.source_message_id !== order.source_message_id) {
-      throw new Error("The generated Arena order ID is not unique.");
+      throw new ArenaOperationalError("integrity", "order_id_collision", "The generated Arena order ID is not unique.");
     }
     await this.ledger.append({
       kind: "order_created",

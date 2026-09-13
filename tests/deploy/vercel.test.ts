@@ -116,14 +116,21 @@ describe("Vercel stateless deployment adapter", () => {
       deployment.handle("listing", requestFor("/api/v1/listing", "GET")),
     ]);
 
-    expect(await bodyOf(health)).toMatchObject({ status: "ok", service: "DeliverCheck" });
-    expect(await bodyOf(card)).toMatchObject({
+    const healthBody = await bodyOf(health);
+    const cardBody = await bodyOf(card);
+    const listingBody = await bodyOf(listing);
+
+    expect(healthBody).toMatchObject({ status: "ok", service: "DeliverCheck" });
+    expect(cardBody).toMatchObject({
       name: "DeliverCheck",
+      implementation_status: "live_public_service",
       endpoints: { mcp: `${BASE_URL}/api/mcp` },
     });
-    expect(await bodyOf(listing)).toMatchObject({
+    expect(listingBody).toMatchObject({
+      implementation_status: "live_public_service",
       tools: [{ name: "diagnose", price_credits: 0 }, { name: "repair", price_credits: 7 }],
     });
+    expect(cardBody["buyer_guide"]).toEqual(listingBody["buyer_guide"]);
   });
 
   it("wraps diagnose and complete verified repair", async () => {

@@ -23,6 +23,77 @@ export type DiscoveryPath = (typeof DISCOVERY_PATHS)[keyof typeof DISCOVERY_PATH
 export const PRODUCT_TAGLINE = "Make one agent’s output usable by the next.";
 export const PRODUCT_SCOPE = "Bounded top-level JSON-object diagnosis and repair.";
 
+export const BUYER_GUIDE = {
+  use_when: [
+    "A JSON result is rejected by the next agent’s schema.",
+    "Two agents use different top-level field names or allowed enum values.",
+    "A delivery is nearly valid but requires explicitly justified normalization.",
+  ],
+  recommended_flow: [
+    "Call diagnose for 0 Arena credits.",
+    "Inspect the exact incompatibilities.",
+    "Supply explicit deterministic transformation rules.",
+    "Call repair for 7 Arena credits.",
+    "Accept a candidate only when status is passed_checks.",
+  ],
+  not_for: [
+    "Proving factual truth.",
+    "Evaluating seller reputation.",
+    "Inventing missing or ambiguous information.",
+    "Arbitrary nested-document transformation.",
+  ],
+  supported_repairs: [
+    "top-level field rename and move",
+    "enum normalization",
+    "explicitly permitted whitespace trimming",
+    "leading-zero identifier padding",
+    "exact constant correction",
+    "unambiguous slash-date conversion",
+    "explicitly defined comma-number conversion",
+    "explicitly pinned currency-symbol conversion",
+  ],
+} as const;
+
+export const COMPATIBILITY_PROFILES = {
+  limitation: "These profiles cover supported top-level normalization only.",
+  profiles: [
+    {
+      name: "claim_verdict",
+      description: "Normalize top-level verdict, status, and evidence field names.",
+    },
+    {
+      name: "trust_decision",
+      description: "Normalize top-level recommendation and confidence fields.",
+    },
+    {
+      name: "purchase_receipt",
+      description: "Normalize top-level seller, service, status, and artifact-hash fields.",
+    },
+    {
+      name: "risk_report",
+      description: "Normalize top-level decision, risk, and next-action fields.",
+    },
+  ],
+} as const;
+
+const EXAMPLE_REQUEST = {
+  request_id: "delivercheck-enum-normalization-example",
+  input_format: "json",
+  source_text: '{"status":"done"}',
+  target_schema: {
+    type: "object",
+    additionalProperties: false,
+    required: ["status"],
+    properties: {
+      status: {
+        type: "string",
+        enum: ["complete", "pending"],
+      },
+    },
+  },
+  explicit_rules: ['Normalize "status" value "done" to "complete".'],
+} as const;
+
 export function createServiceListing() {
   return {
     schema_version: "delivercheck.service-listing.v1",
@@ -30,8 +101,10 @@ export function createServiceListing() {
     name: "DeliverCheck",
     tagline: PRODUCT_TAGLINE,
     scope: PRODUCT_SCOPE,
-    implementation_status: "local_service_ready",
+    implementation_status: "live_public_service",
     purpose: DELIVERCHECK_PURPOSE,
+    buyer_guide: BUYER_GUIDE,
+    compatibility_profiles: COMPATIBILITY_PROFILES,
     pricing: {
       currency: PUBLIC_SERVICE_CURRENCY,
       billing_enforcement: BILLING_ENFORCEMENT,
@@ -50,7 +123,14 @@ export function createServiceListing() {
     caller_identity: {
       source: "trusted_deployment_middleware_only",
       request_body_claims_accepted: false,
-      status: "not_configured_locally",
+      status: "external_arena_authentication_pending",
+    },
+    example_request: {
+      request: EXAMPLE_REQUEST,
+      expected_outcomes: {
+        diagnose: "incompatible",
+        repair: "passed_checks",
+      },
     },
   } as const;
 }
@@ -77,7 +157,9 @@ export function createAgentCard(baseUrl: string) {
     identity: DELIVERCHECK_IDENTITY_STRINGS.service,
     tagline: PRODUCT_TAGLINE,
     scope: PRODUCT_SCOPE,
-    implementation_status: "local_service_ready",
+    implementation_status: "live_public_service",
+    buyer_guide: BUYER_GUIDE,
+    compatibility_profiles: COMPATIBILITY_PROFILES,
     agents: [
       DELIVERCHECK_IDENTITY_STRINGS.intake,
       DELIVERCHECK_IDENTITY_STRINGS.repair,
@@ -102,7 +184,7 @@ export function createAgentCard(baseUrl: string) {
     authentication: {
       caller_identity_source: "trusted_deployment_middleware_only",
       request_body_claims_accepted: false,
-      status: "not_configured_locally",
+      status: "external_arena_authentication_pending",
     },
   } as const;
 }

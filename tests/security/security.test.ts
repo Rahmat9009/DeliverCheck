@@ -31,6 +31,30 @@ import {
 } from "../../src/verify/security.js";
 import { verifyCandidate } from "../../src/verify/verifier.js";
 import type { DeliverCheckRequest } from "../../src/types.js";
+import { createAgentCard, createServiceListing } from "../../src/discovery/documents.js";
+
+describe("Discovery safety claims", () => {
+  it("keeps production guidance bounded and authentication external", () => {
+    const listing = createServiceListing();
+    const card = createAgentCard("https://delivercheck.vercel.app");
+
+    expect(listing.buyer_guide.not_for).toEqual([
+      "Proving factual truth.",
+      "Evaluating seller reputation.",
+      "Inventing missing or ambiguous information.",
+      "Arbitrary nested-document transformation.",
+    ]);
+    expect(listing.compatibility_profiles.limitation).toBe(
+      "These profiles cover supported top-level normalization only.",
+    );
+    expect(listing.caller_identity.status).toBe("external_arena_authentication_pending");
+    expect(card.authentication.status).toBe("external_arena_authentication_pending");
+    expect(listing.pricing.payment_verification).toBe("not_implemented");
+    expect(JSON.stringify({ listing, card })).not.toMatch(
+      /https?:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])/iu,
+    );
+  });
+});
 
 describe("Adversarial Security Test Suites", () => {
   // 1. Ambiguity

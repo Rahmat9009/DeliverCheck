@@ -1,9 +1,45 @@
+# Dependencies and build output
 node_modules/
 dist/
+build/
 coverage/
+
+# Local environment and deployment metadata
 .env
 .env.*
 !.env.example
-.sharednet/
+.npmrc
+.vercel/
+
+# Local Git and SharedNet state
 .git-local/
+.sharednet/
+.sharednet-*/
+
+# Arena state, configuration, locks, ledgers, and order stores
 .arena-state/
+arena-state/
+pending-orders/
+*.lock
+*.jsonl
+.arena-config*
+arena-config*.json
+delivercheck-arena-profile*.json
+
+# Credentials and private key material
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Temporary bundles, logs, and editor files
+*.log
+npm-debug.log*
+*.tgz
+*.tar.gz
+*.zip
+*.tmp
+.tmp/
+tmp/
+*.swp
+*~

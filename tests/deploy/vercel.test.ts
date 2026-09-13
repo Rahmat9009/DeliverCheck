@@ -15,6 +15,7 @@ import { repairRequest, serviceRequest } from "../service/fixtures.js";
 import type { VerificationAgentPort } from "../../src/coordinator/ports.js";
 import { GET as agentCardRoute } from "../../api/agent-card.js";
 import { GET as healthRoute } from "../../api/health.js";
+import { GET as homeRoute } from "../../api/home.js";
 import { POST as mcpRoute } from "../../api/mcp.js";
 import { GET as listingRoute } from "../../api/v1/listing.js";
 import { POST as diagnoseRoute } from "../../api/v1/diagnose.js";
@@ -68,6 +69,32 @@ afterEach(async () => {
 });
 
 describe("Vercel stateless deployment adapter", () => {
+  it("serves the public landing page from the exact root rewrite", async () => {
+    const response = homeRoute();
+    const body = await response.text();
+    const configuration = JSON.parse(
+      await readFile(new URL("../../vercel.json", import.meta.url), "utf8"),
+    ) as { rewrites: { source: string; destination: string }[] };
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toBe("text/html; charset=utf-8");
+    expect(body).toContain("DeliverCheck");
+    for (const path of [
+      "/health",
+      "/.well-known/agent.json",
+      "/api/v1/listing",
+      "/api/v1/diagnose",
+      "/api/v1/repair",
+      "/api/mcp",
+    ]) {
+      expect(body).toContain(path);
+    }
+    expect(configuration.rewrites).toContainEqual({
+      source: "/",
+      destination: "/api/home",
+    });
+  });
+
   it("exports callable framework-free Vercel route methods", async () => {
     expect(mcpRoute).toBeTypeOf("function");
     const calls = await Promise.all([

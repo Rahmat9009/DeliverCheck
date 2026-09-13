@@ -1,6 +1,8 @@
+import { spawn } from "node:child_process";
+
 import { describe, expect, it } from "vitest";
 
-import { sharedNetExecutable, SharedNetCliAdapter, SimulatedSharedNetAdapter, type ArgumentExecutor } from "../../src/arena/sharednet.js";
+import { LIVE_SHAREDNET_PLATFORM_ERROR, NodeArgumentExecutor, SharedNetAdapterError, sharedNetExecutable, SharedNetCliAdapter, SimulatedSharedNetAdapter, type ArgumentExecutor } from "../../src/arena/sharednet.js";
 import { validLiveConfig } from "./fixtures.js";
 
 class RecordingExecutor implements ArgumentExecutor {
@@ -17,10 +19,10 @@ describe("typed SharedNet adapters", () => {
   it("constructs an argument array for reads", async () => {
     const executor = new RecordingExecutor();
     executor.response = { items: [], next_cursor: null, has_more: false };
-    const adapter = new SharedNetCliAdapter(validLiveConfig(), executor);
+    const adapter = new SharedNetCliAdapter(validLiveConfig(), executor, 30_000, fetch, "linux");
     await adapter.read(41, 50);
     expect(executor.calls[0]).toEqual({
-      executable: sharedNetExecutable(),
+      executable: sharedNetExecutable("linux"),
       args: ["-y", "sharednet@0.1.8", "read", "--after", "41", "--limit", "50", "--order", "asc", "--as", "i_LIVEINST01", "--json"],
       timeout: 30_000,
     });
@@ -28,7 +30,7 @@ describe("typed SharedNet adapters", () => {
 
   it("uses bounded argument arrays for wait, reply, balance, and ledger", async () => {
     const executor = new RecordingExecutor();
-    const adapter = new SharedNetCliAdapter(validLiveConfig(), executor);
+    const adapter = new SharedNetCliAdapter(validLiveConfig(), executor, 30_000, fetch, "linux");
     executor.response = { items: [], next_cursor: null, has_more: false };
     await adapter.wait(25, 2);
     executor.response = { message: { id: "msg_RESPONSE01" } };
@@ -44,7 +46,7 @@ describe("typed SharedNet adapters", () => {
   it("passes message text as one argument instead of a shell command", async () => {
     const executor = new RecordingExecutor();
     executor.response = { message: { id: "msg_RESPONSE01" } };
-    const adapter = new SharedNetCliAdapter(validLiveConfig(), executor);
+    const adapter = new SharedNetCliAdapter(validLiveConfig(), executor, 30_000, fetch, "linux");
     const hostile = "hello; echo should-not-run $(whoami)";
     await adapter.say(hostile);
     expect(executor.calls[0]!.args).toContain(hostile);
@@ -54,7 +56,7 @@ describe("typed SharedNet adapters", () => {
   it("builds the documented payment command without credentials", async () => {
     const executor = new RecordingExecutor();
     executor.response = { transfer: { id: "txn_TRANSFER01" } };
-    const adapter = new SharedNetCliAdapter(validLiveConfig(), executor);
+    const adapter = new SharedNetCliAdapter(validLiveConfig(), executor, 30_000, fetch, "linux");
     await adapter.pay({ target: "p_MARKET0001", amount: 25, memo: "arena:purchase:one", bind_to_room: true });
     expect(executor.calls[0]!.args).toEqual(["-y", "sharednet@0.1.8", "pay", "p_MARKET0001", "25", "--memo", "arena:purchase:one", "--room", "--as", "i_LIVEINST01", "--json"]);
     expect(executor.calls[0]!.args.join(" ")).not.toMatch(/token|api.key|credential/i);
@@ -62,14 +64,14 @@ describe("typed SharedNet adapters", () => {
 
   it("does not allow a caller to weaken the configured Room binding", async () => {
     const executor = new RecordingExecutor();
-    const adapter = new SharedNetCliAdapter(validLiveConfig(), executor);
+    const adapter = new SharedNetCliAdapter(validLiveConfig(), executor, 30_000, fetch, "linux");
     await expect(adapter.pay({ target: "p_MARKET0001", amount: 25, memo: "arena:purchase:one", bind_to_room: false })).rejects.toThrow(/binding/);
     expect(executor.calls).toHaveLength(0);
   });
 
   it("caps one wait operation at the documented 25-second server bound", async () => {
     const executor = new RecordingExecutor();
-    const adapter = new SharedNetCliAdapter(validLiveConfig(), executor);
+    const adapter = new SharedNetCliAdapter(validLiveConfig(), executor, 30_000, fetch, "linux");
     await expect(adapter.wait(26)).rejects.toThrow(/wait bounds/);
     expect(executor.calls).toHaveLength(0);
   });
@@ -78,9 +80,24 @@ describe("typed SharedNet adapters", () => {
     const executor = new RecordingExecutor();
     executor.response = { instance: { cli_version: "0.1.8" } };
     const fetcher = async () => new Response(JSON.stringify({ protocol_version: "1.0.0" }), { status: 200, headers: { "content-type": "application/json" } });
-    const adapter = new SharedNetCliAdapter(validLiveConfig(), executor, 30_000, fetcher as typeof fetch);
+    const adapter = new SharedNetCliAdapter(validLiveConfig(), executor, 30_000, fetcher as typeof fetch, "linux");
     await expect(adapter.protocolStatus()).resolves.toEqual({ cli_version: "0.1.8", server_protocol_version: "1.0.0" });
     expect(executor.calls[0]?.args).toEqual(["-y", "sharednet@0.1.8", "session", "status", "--session", "i_LIVEINST01", "--json"]);
+  });
+
+  it("rejects native Windows live execution before spawning a process", () => {
+    const executor = new RecordingExecutor();
+    expect(() => new SharedNetCliAdapter(validLiveConfig(), executor, 30_000, fetch, "win32")).toThrow(LIVE_SHAREDNET_PLATFORM_ERROR);
+    expect(executor.calls).toHaveLength(0);
+  });
+
+  it("converts a synchronous spawn failure into a sanitized bounded adapter error", async () => {
+    const failingSpawn = (() => { throw Object.assign(new Error("sensitive runtime detail"), { code: "EINVAL" }); }) as typeof spawn;
+    const executor = new NodeArgumentExecutor(failingSpawn);
+    const error = await executor.execute("npx", ["-y", "sharednet@0.1.8", "whoami", "--json"], 100).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(SharedNetAdapterError);
+    expect(error).toMatchObject({ code: "cli_unavailable", message: "The SharedNet CLI could not be started." });
+    expect((error as Error).message).not.toContain("sensitive runtime detail");
   });
 
   it("keeps simulated mutations in memory with zero real side effects", async () => {

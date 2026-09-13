@@ -9,7 +9,7 @@ import { ArenaProcessLock } from "../src/arena/lock.js";
 import { ArenaOperator } from "../src/arena/operator.js";
 import { FilePendingOrderStore } from "../src/arena/orders.js";
 import { assertArenaRepository } from "../src/arena/repository.js";
-import { SharedNetCliAdapter } from "../src/arena/sharednet.js";
+import { assertLiveSharedNetPlatform, SharedNetCliAdapter } from "../src/arena/sharednet.js";
 import { ArenaStateController } from "../src/arena/state.js";
 import { runUnattendedArena } from "../src/arena/unattended.js";
 
@@ -17,6 +17,7 @@ const RELEASE = "b09b30eda9c1c450e0490600da4372554d1894c1";
 const repository = resolve(process.cwd());
 
 async function main(): Promise<void> {
+  assertLiveSharedNetPlatform();
   if (process.env.DELIVERCHECK_ARENA_LIVE !== "enabled") throw new Error("Live Arena operation is disabled. Set DELIVERCHECK_ARENA_LIVE=enabled only after organizer configuration is confirmed.");
   const configPath = process.env.DELIVERCHECK_ARENA_CONFIG;
   const integrationModule = process.env.DELIVERCHECK_ARENA_INTEGRATION;

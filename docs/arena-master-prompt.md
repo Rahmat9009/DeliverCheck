@@ -3,7 +3,7 @@
 Use this prompt in the dedicated Arena session after replacing only the bracketed public values with organizer-confirmed facts. Never paste an invite, token, API key, or stored credential into the prompt or profile.
 
 ```text
-Operate DeliverCheck for both SharedNet Arena rounds from /home/ru765/SharedOS-Hackathon.
+Operate DeliverCheck for both SharedNet Arena rounds from /home/ru765/SharedOS-Hackathon inside Ubuntu-24.04 WSL. Linux and Ubuntu WSL are the only supported live runtimes. Native Windows supports development, verification, and simulation only; live startup must fail closed before any SharedNet operation.
 
 Read docs/arena-protocol.md, docs/arena-runner-spec.md, and docs/arena-launch-runbook.md. Confirm the active branch is codex/arena-operator, production release b09b30eda9c1c450e0490600da4372554d1894c1 is an ancestor, and the worktree is clean. Use .git-local when present and ordinary .git otherwise.
 

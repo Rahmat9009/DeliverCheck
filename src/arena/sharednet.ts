@@ -1,4 +1,5 @@
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcessByStdio } from "node:child_process";
+import type { Readable } from "node:stream";
 
 import type {
   ArenaMode,
@@ -14,10 +15,7 @@ import { identityMatchesKind, validateLiveConfig } from "./config.js";
 const CLI_PACKAGE = "sharednet@0.1.8";
 const MAX_OUTPUT_BYTES = 1024 * 1024;
 const MAX_MESSAGE_BYTES = 32_768;
-
-export function sharedNetExecutable(platform = process.platform): "npx" | "npx.cmd" {
-  return platform === "win32" ? "npx.cmd" : "npx";
-}
+export const LIVE_SHAREDNET_PLATFORM_ERROR = "Live SharedNet execution requires Linux or Ubuntu WSL. Native Windows supports simulation only.";
 
 export interface ArgumentExecutor {
   execute(executable: string, args: readonly string[], timeoutMs: number): Promise<{ stdout: string; stderr: string; exitCode: number }>;
@@ -30,14 +28,31 @@ export class SharedNetAdapterError extends Error {
   }
 }
 
+export function assertLiveSharedNetPlatform(platform: NodeJS.Platform = process.platform): void {
+  if (platform !== "linux") throw new SharedNetAdapterError("unsupported_live_platform", LIVE_SHAREDNET_PLATFORM_ERROR);
+}
+
+export function sharedNetExecutable(platform: NodeJS.Platform = process.platform): "npx" {
+  assertLiveSharedNetPlatform(platform);
+  return "npx";
+}
+
 export class NodeArgumentExecutor implements ArgumentExecutor {
+  constructor(private readonly spawner: typeof spawn = spawn) {}
+
   execute(executable: string, args: readonly string[], timeoutMs: number): Promise<{ stdout: string; stderr: string; exitCode: number }> {
     return new Promise((resolve, reject) => {
-      const child = spawn(executable, [...args], {
-        shell: false,
-        stdio: ["ignore", "pipe", "pipe"],
-        env: process.env,
-      });
+      let child: ChildProcessByStdio<null, Readable, Readable>;
+      try {
+        child = this.spawner(executable, [...args], {
+          shell: false,
+          stdio: ["ignore", "pipe", "pipe"],
+          env: process.env,
+        });
+      } catch (error) {
+        reject(new SharedNetAdapterError("cli_unavailable", "The SharedNet CLI could not be started.", { cause: error }));
+        return;
+      }
       const stdout: Uint8Array[] = [];
       const stderr: Uint8Array[] = [];
       let stdoutBytes = 0;
@@ -114,14 +129,16 @@ export class SharedNetCliAdapter implements SharedNetAdapter {
     private readonly executor: ArgumentExecutor = new NodeArgumentExecutor(),
     private readonly timeoutMs = 30_000,
     private readonly fetcher: typeof fetch = fetch,
+    private readonly platform: NodeJS.Platform = process.platform,
   ) {
+    assertLiveSharedNetPlatform(this.platform);
     this.config = validateLiveConfig(config);
   }
 
   private readonly config: LiveArenaConfig;
 
   private async run<T>(args: readonly string[]): Promise<T> {
-    const result = await this.executor.execute(sharedNetExecutable(), ["-y", CLI_PACKAGE, ...args, "--json"], this.timeoutMs);
+    const result = await this.executor.execute(sharedNetExecutable(this.platform), ["-y", CLI_PACKAGE, ...args, "--json"], this.timeoutMs);
     if (result.exitCode !== 0) {
       throw new SharedNetAdapterError("cli_failed", "The SharedNet CLI operation failed.");
     }

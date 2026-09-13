@@ -48,7 +48,7 @@ describe("Arena operator guards", () => {
       calls: 0,
       async execute() { this.calls += 1; return { stdout: "{}", stderr: "", exitCode: 0 }; },
     };
-    expect(() => new SharedNetCliAdapter({ mode: "live" } as ArenaConfig as ReturnType<typeof validLiveConfig>, executor)).toThrow(/configuration is incomplete/);
+    expect(() => new SharedNetCliAdapter({ mode: "live" } as ArenaConfig as ReturnType<typeof validLiveConfig>, executor, 30_000, fetch, "linux")).toThrow(/configuration is incomplete/);
     expect(executor.calls).toBe(0);
   });
 

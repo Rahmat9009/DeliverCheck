@@ -12,7 +12,7 @@ import { FilePendingOrderStore } from "../../src/arena/orders.js";
 import { runRoundOne, runRoundTwo, SimulationRankingAdapter } from "../../src/arena/rounds.js";
 import { DeliverCheckSellerWorkflow } from "../../src/arena/seller.js";
 import { gitMetadataArguments } from "../../src/arena/repository.js";
-import { sharedNetExecutable, SimulatedSharedNetAdapter } from "../../src/arena/sharednet.js";
+import { SimulatedSharedNetAdapter } from "../../src/arena/sharednet.js";
 import { SIMULATION_PRODUCTS, SimulationMarketplace } from "../../src/arena/simulation.js";
 import { ArenaStateController } from "../../src/arena/state.js";
 import { runUnattendedArena, type ArenaClock } from "../../src/arena/unattended.js";
@@ -243,14 +243,12 @@ describe("unattended Arena hardening", () => {
     expect(sharednet.real_side_effects).toBe(0);
   });
 
-  it("enforces one process per state file and supports Windows npx.cmd", async () => {
+  it("enforces one process per state file and isolates Git metadata fixtures", async () => {
     const dir = await mkdtemp(join(tmpdir(), "arena-lock-"));
     const path = join(dir, "operator.lock");
     const first = await ArenaProcessLock.acquire(path);
     await expect(ArenaProcessLock.acquire(path)).rejects.toThrow(/Another Arena operator/);
     await first.release();
-    expect(sharedNetExecutable("win32")).toBe("npx.cmd");
-    expect(sharedNetExecutable("linux")).toBe("npx");
     const localMetadata = await mkdtemp(join(tmpdir(), "arena-git-local-"));
     await mkdir(join(localMetadata, ".git-local"));
     const standardMetadata = await mkdtemp(join(tmpdir(), "arena-git-standard-"));

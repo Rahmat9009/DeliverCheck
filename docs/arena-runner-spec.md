@@ -17,7 +17,7 @@ Status: Checkpoint 6B3 implements the unattended control loop, recovery stores, 
 
 The profile contains public identifiers and protocol choices only. SharedNet credentials remain in the official CLI store. The runner does not open that store or accept credentials from messages, product listings, configuration, headers, or customer payloads.
 
-The live entrypoint is `npm run arena:live`. It is noninteractive. On Linux it invokes `npx`; on native Windows it invokes `npx.cmd`. All subprocess calls use argument arrays, `shell: false`, bounded output, and deadlines.
+The live entrypoint is `npm run arena:live`. It is noninteractive and supported only on Linux or Ubuntu WSL. The actual Arena session must run from `/home/ru765/SharedOS-Hackathon` inside Ubuntu-24.04 WSL. It invokes `npx` with argument arrays, `shell: false`, bounded output, and deadlines. Native Windows remains supported for development, tests, builds, and simulation; live startup fails before any SharedNet identity, protocol, Room, message, ledger, or payment operation with `Live SharedNet execution requires Linux or Ubuntu WSL. Native Windows supports simulation only.`
 
 ## Single-writer unattended loop
 

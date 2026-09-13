@@ -202,7 +202,7 @@ Until those are organizer-confirmed, the transport and credit primitives are usa
 
 ## Checkpoint 6B3 compatibility assumptions
 
-The operator pins the confirmed CLI package at `sharednet@0.1.8` and verifies two runtime values during live preflight: the selected session's reported CLI version and the official discovery document's `protocol_version`. A configured nonempty profile label is not accepted as version proof. The live adapter chooses `npx` on Linux and `npx.cmd` on native Windows.
+The operator pins the confirmed CLI package at `sharednet@0.1.8` and verifies two runtime values during live preflight: the selected session's reported CLI version and the official discovery document's `protocol_version`. A configured nonempty profile label is not accepted as version proof. Live execution is supported only on Linux or Ubuntu WSL and invokes `npx` with `shell: false`; native Windows is limited to development, verification, and simulation.
 
 The unattended loop uses bounded `read --after` pagination followed by `wait`, while retaining its own application cursor. This avoids delegating exactly-once behavior to the CLI's `watch` cursor and lets pending orders be reconsidered without message replay. `watch` remains an official command but is not required by this implementation.
 

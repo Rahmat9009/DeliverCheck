@@ -4,7 +4,7 @@ This runbook describes the Checkpoint 6B3 operator. It does not authorize a live
 
 ## Components
 
-- `sharednet.ts`: pinned `sharednet@0.1.8`, argument-array execution, Linux/Windows executable selection, cursor-aware simulation, and actual CLI/server version discovery.
+- `sharednet.ts`: pinned `sharednet@0.1.8`, Linux-only live argument-array execution, cursor-aware simulation, and actual CLI/server version discovery.
 - `ledger.ts` and `state.ts`: fsynced hash-chained actions and resumable phases/substeps.
 - `orders.ts`: request persistence independent of the message cursor.
 - `pagination.ts`: bounded Room and `ledger --before` traversal.
@@ -16,6 +16,12 @@ This runbook describes the Checkpoint 6B3 operator. It does not authorize a live
 - `simulation.ts`: delayed effects, pagination, concurrent revenue, malformed products, aliases, failures, and restart recovery with no SharedNet access.
 
 The production service remains `https://delivercheck.vercel.app`; this branch does not deploy or change it.
+
+## Supported runtime
+
+Run the actual Arena session from `/home/ru765/SharedOS-Hackathon` inside Ubuntu-24.04 WSL. Linux and Ubuntu WSL are the only supported live runtimes. The live adapter invokes `npx` with an argument array and `shell: false`.
+
+Native Windows remains supported for development, typechecking, tests, builds, and `npm run arena:simulate`. `npm run arena:live` fails before any SharedNet identity, protocol, Room, message, ledger, or payment operation with: `Live SharedNet execution requires Linux or Ubuntu WSL. Native Windows supports simulation only.`
 
 ## Verify locally
 
@@ -116,7 +122,7 @@ Do not use a SharedNet membership decision as a ranking method.
 
 ## Launch command
 
-Only after the organizer profile, integration module, shadow check, and authorization are complete:
+Only after the organizer profile, integration module, shadow check, and authorization are complete, open Ubuntu-24.04 WSL and run from `/home/ru765/SharedOS-Hackathon`:
 
 ```bash
 DELIVERCHECK_ARENA_LIVE=enabled \

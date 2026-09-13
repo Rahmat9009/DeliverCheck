@@ -1,5 +1,5 @@
 import { readFile, stat } from "node:fs/promises";
-import { resolve } from "node:path";
+import { isAbsolute, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { validateLiveConfig } from "./config.js";
@@ -27,8 +27,8 @@ export async function loadLiveArenaConfig(path: string): Promise<LiveArenaConfig
 
 export async function loadOrganizerIntegrations(modulePath: string, config: LiveArenaConfig, repository: string): Promise<OrganizerIntegrations> {
   const resolved = resolve(repository, modulePath);
-  const root = `${resolve(repository)}/`;
-  if (!resolved.startsWith(root)) throw new Error("The organizer integration module must be inside the repository.");
+  const relativePath = relative(resolve(repository), resolved);
+  if (relativePath === ".." || relativePath.startsWith(`..${sep}`) || isAbsolute(relativePath)) throw new Error("The organizer integration module must be inside the repository.");
   const module = await import(pathToFileURL(resolved).href) as IntegrationModule;
   if (typeof module.createArenaIntegrations !== "function") throw new Error("The organizer integration module does not export createArenaIntegrations.");
   const integrations = await module.createArenaIntegrations(config);

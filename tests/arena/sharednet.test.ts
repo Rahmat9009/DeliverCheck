@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { SharedNetCliAdapter, SimulatedSharedNetAdapter, type ArgumentExecutor } from "../../src/arena/sharednet.js";
+import { sharedNetExecutable, SharedNetCliAdapter, SimulatedSharedNetAdapter, type ArgumentExecutor } from "../../src/arena/sharednet.js";
 import { validLiveConfig } from "./fixtures.js";
 
 class RecordingExecutor implements ArgumentExecutor {
@@ -20,7 +20,7 @@ describe("typed SharedNet adapters", () => {
     const adapter = new SharedNetCliAdapter(validLiveConfig(), executor);
     await adapter.read(41, 50);
     expect(executor.calls[0]).toEqual({
-      executable: "npx",
+      executable: sharedNetExecutable(),
       args: ["-y", "sharednet@0.1.8", "read", "--after", "41", "--limit", "50", "--order", "asc", "--as", "i_LIVEINST01", "--json"],
       timeout: 30_000,
     });

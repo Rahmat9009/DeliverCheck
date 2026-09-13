@@ -1,8 +1,9 @@
 import { access } from "node:fs/promises";
 import { spawn } from "node:child_process";
+import { join } from "node:path";
 
 export async function gitMetadataArguments(directory: string): Promise<string[]> {
-  try { await access(`${directory}/.git-local`); return ["--git-dir=.git-local", "--work-tree=."]; }
+  try { await access(join(directory, ".git-local")); return ["--git-dir=.git-local", "--work-tree=."]; }
   catch { return []; }
 }
 

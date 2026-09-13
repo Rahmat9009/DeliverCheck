@@ -1,4 +1,4 @@
-import { mkdtemp } from "node:fs/promises";
+import { mkdir, mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -251,7 +251,11 @@ describe("unattended Arena hardening", () => {
     await first.release();
     expect(sharedNetExecutable("win32")).toBe("npx.cmd");
     expect(sharedNetExecutable("linux")).toBe("npx");
-    expect(await gitMetadataArguments(process.cwd())).toEqual(["--git-dir=.git-local", "--work-tree=."]);
-    expect(await gitMetadataArguments(dir)).toEqual([]);
+    const localMetadata = await mkdtemp(join(tmpdir(), "arena-git-local-"));
+    await mkdir(join(localMetadata, ".git-local"));
+    const standardMetadata = await mkdtemp(join(tmpdir(), "arena-git-standard-"));
+    await mkdir(join(standardMetadata, ".git"));
+    expect(await gitMetadataArguments(localMetadata)).toEqual(["--git-dir=.git-local", "--work-tree=."]);
+    expect(await gitMetadataArguments(standardMetadata)).toEqual([]);
   });
 });

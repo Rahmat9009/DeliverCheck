@@ -1,4 +1,5 @@
-import { dirname, join } from "node:path";
+import { tmpdir } from "node:os";
+import { basename, dirname, join } from "node:path";
 import { rm } from "node:fs/promises";
 
 import { computeCanonicalHash } from "../verify/canonical.js";
@@ -96,9 +97,9 @@ function operatorOptions(state: ArenaStateController, sharednet: SimulatedShared
   };
 }
 
-export async function runArenaSimulation(path = `/tmp/delivercheck-arena-simulation-${process.pid}.jsonl`) {
+export async function runArenaSimulation(path = join(tmpdir(), `delivercheck-arena-simulation-${process.pid}.jsonl`)) {
   await rm(path, { force: true });
-  const ordersPath = join(dirname(path), `${path.split("/").at(-1)!}.orders`);
+  const ordersPath = join(dirname(path), `${basename(path)}.orders`);
   await rm(ordersPath, { recursive: true, force: true });
   const now = () => "2026-09-13T09:00:00.000Z";
   class DeliveryCrashAdapter extends SimulatedSharedNetAdapter {
